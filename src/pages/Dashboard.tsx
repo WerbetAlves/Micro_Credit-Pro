@@ -124,33 +124,42 @@ export function Dashboard() {
           {/* Conteúdo principal */}
           <div className="grid grid-cols-1 xl:grid-cols-12 gap-6 lg:gap-8">
 
-            {/* Esquerda */}
-            <div className="xl:col-span-8 min-w-0">
-              <UpcomingCollections />
+            {/* ESQUERDA (AGORA MAIS FORTE) */}
+            <div className="xl:col-span-8 min-w-0 space-y-6">
+              
+              <div className="flex flex-col h-full">
+                <UpcomingCollections />
+              </div>
+
+              <RecentActivity />
+
             </div>
 
-            {/* Direita */}
+            {/* DIREITA (SUPORTE / IA) */}
             <div className="xl:col-span-4 space-y-6 min-w-0">
+              
               <AIAssistantDashboard />
-              <RecentActivity />
 
               <div className="bg-emerald-600 rounded-3xl p-6 text-white relative overflow-hidden shadow-lg">
                 <div className="relative z-10 space-y-3">
+                  
                   <h3 className="text-base sm:text-lg font-bold">
                     {t.needSupport}
                   </h3>
 
-                  <p className="text-sm text-emerald-50 leading-relaxed max-w-full sm:max-w-[260px]">
+                  <p className="text-sm text-emerald-50 leading-relaxed max-w-[260px]">
                     {t.supportText}
                   </p>
 
                   <button className="bg-white text-emerald-600 px-5 py-2.5 rounded-xl font-bold text-xs tracking-wide hover:scale-105 active:scale-95 transition">
                     {t.liveChat}
                   </button>
+
                 </div>
 
                 <Plus className="absolute -bottom-8 -right-8 size-28 opacity-10 rotate-12" />
               </div>
+
             </div>
           </div>
 
@@ -160,9 +169,7 @@ export function Dashboard() {
               {t.issueNewCredit}
             </h3>
 
-            <div className="w-full">
-              <LoanSimulator />
-            </div>
+            <LoanSimulator />
           </div>
 
           {/* Rodapé */}
