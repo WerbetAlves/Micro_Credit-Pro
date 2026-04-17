@@ -19,7 +19,7 @@ export function KPICard({label, value, change, trend, subtext, isCurrency}: KPIC
     <div className="bg-white p-6 rounded-[2rem] shadow-sm border border-slate-100 flex flex-col justify-between min-h-[160px] hover:shadow-md transition-shadow duration-300">
       <span className="text-slate-400 text-xs font-bold uppercase tracking-widest">{label}</span>
       <div>
-        <h2 className="text-3xl font-black text-slate-900 tracking-tighter mt-2">{displayValue}</h2>
+        <h2 className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tighter mt-2">{displayValue}</h2>
         {change && (
           <div className={cn(
             "flex items-center text-xs mt-2 font-bold",

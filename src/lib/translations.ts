@@ -194,6 +194,10 @@ export const locales = {
     primaryColor: "Primary Color",
     colorCustomization: "Color Customization",
     aiThinkingAvatar: "AI is imagining your avatar...",
+    unreadNotifications: "Unread Notifications",
+    markAllAsRead: "Mark all as read",
+    noNotifications: "All caught up!",
+    notificationTitle: "Alerts",
   },
   pt: {
     dashboard: "Visão Geral do Painel",
@@ -391,6 +395,10 @@ export const locales = {
     primaryColor: "Cor Primária",
     colorCustomization: "Personalização de Cores",
     aiThinkingAvatar: "IA está imaginando seu avatar...",
+    unreadNotifications: "Notificações Não Lidas",
+    markAllAsRead: "Marcar todas como lidas",
+    noNotifications: "Tudo em dia!",
+    notificationTitle: "Alertas",
   }
 };
 

@@ -290,7 +290,7 @@ export function AIAssistantDashboard() {
               initial={{ opacity: 0, x: 100, scale: 0.95 }}
               animate={{ opacity: 1, x: 0, scale: 1 }}
               exit={{ opacity: 0, x: 100, scale: 0.95 }}
-              className="fixed right-4 bottom-4 top-4 w-full max-w-[450px] bg-white rounded-[2.5rem] shadow-2xl z-[101] flex flex-col overflow-hidden border border-slate-100"
+              className="fixed right-0 bottom-0 top-0 sm:right-4 sm:bottom-4 sm:top-4 w-full sm:max-w-[450px] bg-white sm:rounded-[2.5rem] shadow-2xl z-[101] flex flex-col overflow-hidden border border-slate-100"
             >
               {/* Header */}
               <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-white sticky top-0">

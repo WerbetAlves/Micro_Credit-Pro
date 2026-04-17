@@ -92,9 +92,9 @@ export function Dashboard() {
       <main className="flex-1 lg:ml-72 min-h-screen pb-20 w-full transition-all duration-300">
         <Header title={t.dashboard} onMenuClick={() => setIsSidebarOpen(true)} />
 
-        <div className="px-4 lg:px-8 py-6 lg:py-10 w-full space-y-8 lg:space-y-12 transition-all">
+        <div className="px-4 md:px-6 lg:px-8 py-6 lg:py-10 w-full space-y-6 md:space-y-8 lg:space-y-12 transition-all">
           {/* KPI Grid */}
-          <section className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 lg:gap-6">
+          <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 lg:gap-6">
             <KPICard 
               label={t.totalCapital} 
               value={stats.totalCapital} 
@@ -123,18 +123,18 @@ export function Dashboard() {
           </section>
 
           {/* Main Content Grid */}
-          <div className="grid grid-cols-1 xl:grid-cols-12 gap-8 lg:gap-12">
-            <div className="xl:col-span-8 space-y-8 lg:space-y-12 w-full min-w-0">
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 md:gap-8 lg:gap-12">
+            <div className="lg:col-span-12 xl:col-span-8 space-y-8 lg:space-y-12 w-full min-w-0">
               <UpcomingCollections />
             <div id="issue-new-credit" className="space-y-6 scroll-mt-24">
-                <div className="flex items-center justify-between">
+                <div className="flex items-center justify-between px-2">
                   <h3 className="text-xl lg:text-2xl font-black tracking-tight text-slate-900">{t.issueNewCredit}</h3>
                 </div>
                 <LoanSimulator />
               </div>
             </div>
 
-            <div className="xl:col-span-4 space-y-8 w-full min-w-0">
+            <div className="lg:col-span-12 xl:col-span-4 space-y-8 w-full min-w-0">
               <AIAssistantDashboard />
               <RecentActivity />
               <div className="bg-emerald-600 rounded-[2rem] p-6 lg:p-8 text-white relative overflow-hidden shadow-xl shadow-emerald-100">

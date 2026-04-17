@@ -1,8 +1,10 @@
 import React, { useState } from 'react';
 import { Search, Bell, Menu } from 'lucide-react';
+import { cn } from '../lib/utils';
 import { useAuth } from '../contexts/AuthContext';
 import { useLanguage } from '../contexts/LanguageContext';
 import { UserProfileModal } from './UserProfileModal';
+import { NotificationsPopover, Notification } from './NotificationsPopover';
 
 interface HeaderProps {
   title: string;
@@ -14,6 +16,49 @@ export function Header({ title, onMenuClick, children }: HeaderProps) {
   const { user } = useAuth();
   const { t } = useLanguage();
   const [isProfileOpen, setIsProfileOpen] = useState(false);
+  const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
+  
+  // Mock Notifications State
+  const [notifications, setNotifications] = useState<Notification[]>([
+    {
+      id: '1',
+      type: 'payment',
+      title: 'Pagamento Recebido',
+      message: 'João Silva pagou a parcela #04 do empréstimo pessoal.',
+      timestamp: new Date(Date.now() - 1000 * 60 * 30), // 30 mins ago
+      isRead: false
+    },
+    {
+      id: '2',
+      type: 'alert',
+      title: 'Atraso Detectado',
+      message: 'A parcela de Maria Oliveira está 3 dias atrasada.',
+      timestamp: new Date(Date.now() - 1000 * 60 * 60 * 2), // 2 hours ago
+      isRead: false
+    },
+    {
+      id: '3',
+      type: 'loan',
+      title: 'Nova Solicitação',
+      message: 'Carlos Mendes solicitou um novo crédito de R$ 5.000,00.',
+      timestamp: new Date(Date.now() - 1000 * 60 * 60 * 24), // 1 day ago
+      isRead: true
+    }
+  ]);
+
+  const markAsRead = (id: string) => {
+    setNotifications(prev => prev.map(n => n.id === id ? { ...n, isRead: true } : n));
+  };
+
+  const markAllAsRead = () => {
+    setNotifications(prev => prev.map(n => ({ ...n, isRead: true })));
+  };
+
+  const clearAll = () => {
+    setNotifications([]);
+  };
+
+  const unreadCount = notifications.filter(n => !n.isRead).length;
 
   return (
     <>
@@ -37,10 +82,30 @@ export function Header({ title, onMenuClick, children }: HeaderProps) {
           
           <div className="flex items-center gap-2 lg:gap-3">
             {children}
-            <button className="p-2 lg:p-2.5 rounded-xl hover:bg-slate-50 text-slate-400 transition-colors relative">
-              <Bell className="size-5" />
-              <span className="absolute top-2 right-2 w-2 h-2 bg-primary-500 rounded-full border-2 border-white" />
-            </button>
+            <div className="relative">
+              <button 
+                onClick={() => setIsNotificationsOpen(!isNotificationsOpen)}
+                className={cn(
+                  "p-2 lg:p-2.5 rounded-xl transition-all relative",
+                  isNotificationsOpen ? "bg-primary-50 text-primary-600" : "hover:bg-slate-50 text-slate-400"
+                )}
+              >
+                <Bell className="size-5" />
+                {unreadCount > 0 && (
+                  <span className="absolute top-2 right-2 w-2 h-2 bg-primary-500 rounded-full border-2 border-white animate-pulse" />
+                )}
+              </button>
+
+              <NotificationsPopover 
+                isOpen={isNotificationsOpen}
+                onClose={() => setIsNotificationsOpen(false)}
+                notifications={notifications}
+                onMarkAsRead={markAsRead}
+                onMarkAllAsRead={markAllAsRead}
+                onClearAll={clearAll}
+              />
+            </div>
+
             <div 
               className="flex items-center gap-3 cursor-pointer hover:bg-slate-50 p-1 pr-2 rounded-xl transition-all"
               id="user-profile-trigger"
