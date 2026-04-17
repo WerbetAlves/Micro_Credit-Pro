@@ -95,7 +95,7 @@ export function Dashboard() {
         {/* Container principal com largura máxima para não esticar demais em monitores ultrawide */}
         <div className="px-4 md:px-6 lg:px-8 py-6 lg:py-10 w-full max-w-[1600px] mx-auto space-y-8 lg:space-y-12 transition-all">
           
-          {/* KPI Grid */}
+          {/* KPI Grid - Mantido no topo */}
           <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 lg:gap-6">
             <KPICard 
               label={t.totalCapital} 
@@ -124,18 +124,32 @@ export function Dashboard() {
             />
           </section>
 
-          {/* NOVO LAYOUT DO MAIN CONTENT: Linhas separadas para evitar sobreposição */}
+          {/* LAYOUT DO MAIN CONTENT: Simulador movido para cima */}
           <div className="space-y-8 lg:space-y-12 w-full">
             
-            {/* LINHA 1: Cobranças (8/12 colunas) e Sidebar Direita (4/12 colunas) */}
+            {/* LINHA 1: Simulador Ocupando a Largura Total (12/12) */}
+            <div id="issue-new-credit" className="space-y-6 scroll-mt-24 w-full">
+              <div className="flex items-center justify-between px-2">
+                <h3 className="text-xl lg:text-2xl font-black tracking-tight text-slate-900">{t.issueNewCredit}</h3>
+              </div>
+              <div className="w-full">
+                <LoanSimulator />
+              </div>
+            </div>
+
+            {/* LINHA 2: Cobranças (8/12 colunas) e Sidebar Direita (4/12 colunas) */}
             <div className="grid grid-cols-1 xl:grid-cols-12 gap-6 md:gap-8 lg:gap-12">
+              {/* Lado Esquerdo - Em telas menores ocupará 100%, em maiores ocupará 8 de 12 partes */}
               <div className="xl:col-span-8 w-full min-w-0">
                 <UpcomingCollections />
               </div>
 
+              {/* Lado Direito - Em telas menores ocupará 100%, em maiores ocupará 4 de 12 partes */}
               <div className="xl:col-span-4 space-y-8 w-full min-w-0">
                 <AIAssistantDashboard />
                 <RecentActivity />
+                
+                {/* Cartão de Suporte */}
                 <div className="bg-emerald-600 rounded-[2rem] p-6 lg:p-8 text-white relative overflow-hidden shadow-xl shadow-emerald-100">
                   <div className="relative z-10 space-y-4">
                     <h3 className="text-lg lg:text-xl font-bold tracking-tight">{t.needSupport}</h3>
@@ -148,17 +162,6 @@ export function Dashboard() {
                   </div>
                   <Plus className="absolute -bottom-10 -right-10 size-32 lg:size-48 opacity-10 rotate-12" />
                 </div>
-              </div>
-            </div>
-
-            {/* LINHA 2: Simulador Ocupando a Largura Total (12/12) */}
-            <div id="issue-new-credit" className="space-y-6 scroll-mt-24 w-full">
-              <div className="flex items-center justify-between px-2">
-                <h3 className="text-xl lg:text-2xl font-black tracking-tight text-slate-900">{t.issueNewCredit}</h3>
-              </div>
-              {/* O LoanSimulator agora tem espaço de sobra para não quebrar o layout */}
-              <div className="w-full">
-                <LoanSimulator />
               </div>
             </div>
 
