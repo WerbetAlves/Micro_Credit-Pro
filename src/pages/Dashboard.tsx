@@ -1,13 +1,13 @@
 import { useState, useEffect } from 'react';
-import {Search, Bell, Plus, Menu} from 'lucide-react';
+import { Search, Bell, Plus, Menu } from 'lucide-react';
 import { Sidebar } from '../components/Sidebar';
 import { Header } from '../components/Header';
 import { AIAssistantDashboard } from '../components/AIAssistantDashboard';
-import {KPICard} from '../components/KPICard';
-import {LoanSimulator} from '../components/LoanSimulator';
-import {UpcomingCollections} from '../components/UpcomingCollections';
-import {RecentActivity} from '../components/RecentActivity';
-import {PortfolioHealth} from '../components/PortfolioHealth';
+import { KPICard } from '../components/KPICard';
+import { LoanSimulator } from '../components/LoanSimulator';
+import { UpcomingCollections } from '../components/UpcomingCollections';
+import { RecentActivity } from '../components/RecentActivity';
+import { PortfolioHealth } from '../components/PortfolioHealth';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../lib/supabase';
@@ -92,7 +92,9 @@ export function Dashboard() {
       <main className="flex-1 lg:ml-72 min-h-screen pb-20 w-full transition-all duration-300">
         <Header title={t.dashboard} onMenuClick={() => setIsSidebarOpen(true)} />
 
-        <div className="px-4 md:px-6 lg:px-8 py-6 lg:py-10 w-full space-y-6 md:space-y-8 lg:space-y-12 transition-all">
+        {/* Container principal com largura máxima para não esticar demais em monitores ultrawide */}
+        <div className="px-4 md:px-6 lg:px-8 py-6 lg:py-10 w-full max-w-[1600px] mx-auto space-y-8 lg:space-y-12 transition-all">
+          
           {/* KPI Grid */}
           <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 lg:gap-6">
             <KPICard 
@@ -122,34 +124,44 @@ export function Dashboard() {
             />
           </section>
 
-          {/* Main Content Grid */}
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 md:gap-8 lg:gap-12">
-            <div className="lg:col-span-12 xl:col-span-8 space-y-8 lg:space-y-12 w-full min-w-0">
-              <UpcomingCollections />
-            <div id="issue-new-credit" className="space-y-6 scroll-mt-24">
-                <div className="flex items-center justify-between px-2">
-                  <h3 className="text-xl lg:text-2xl font-black tracking-tight text-slate-900">{t.issueNewCredit}</h3>
+          {/* NOVO LAYOUT DO MAIN CONTENT: Linhas separadas para evitar sobreposição */}
+          <div className="space-y-8 lg:space-y-12 w-full">
+            
+            {/* LINHA 1: Cobranças (8/12 colunas) e Sidebar Direita (4/12 colunas) */}
+            <div className="grid grid-cols-1 xl:grid-cols-12 gap-6 md:gap-8 lg:gap-12">
+              <div className="xl:col-span-8 w-full min-w-0">
+                <UpcomingCollections />
+              </div>
+
+              <div className="xl:col-span-4 space-y-8 w-full min-w-0">
+                <AIAssistantDashboard />
+                <RecentActivity />
+                <div className="bg-emerald-600 rounded-[2rem] p-6 lg:p-8 text-white relative overflow-hidden shadow-xl shadow-emerald-100">
+                  <div className="relative z-10 space-y-4">
+                    <h3 className="text-lg lg:text-xl font-bold tracking-tight">{t.needSupport}</h3>
+                    <p className="text-sm text-emerald-50 font-medium opacity-90 leading-relaxed max-w-[280px]">
+                      {t.supportText}
+                    </p>
+                    <button className="bg-white text-emerald-600 px-6 py-3 rounded-2xl font-bold text-xs uppercase tracking-widest shadow-lg hover:scale-105 transition-transform active:scale-95">
+                      {t.liveChat}
+                    </button>
+                  </div>
+                  <Plus className="absolute -bottom-10 -right-10 size-32 lg:size-48 opacity-10 rotate-12" />
                 </div>
+              </div>
+            </div>
+
+            {/* LINHA 2: Simulador Ocupando a Largura Total (12/12) */}
+            <div id="issue-new-credit" className="space-y-6 scroll-mt-24 w-full">
+              <div className="flex items-center justify-between px-2">
+                <h3 className="text-xl lg:text-2xl font-black tracking-tight text-slate-900">{t.issueNewCredit}</h3>
+              </div>
+              {/* O LoanSimulator agora tem espaço de sobra para não quebrar o layout */}
+              <div className="w-full">
                 <LoanSimulator />
               </div>
             </div>
 
-            <div className="lg:col-span-12 xl:col-span-4 space-y-8 w-full min-w-0">
-              <AIAssistantDashboard />
-              <RecentActivity />
-              <div className="bg-emerald-600 rounded-[2rem] p-6 lg:p-8 text-white relative overflow-hidden shadow-xl shadow-emerald-100">
-                <div className="relative z-10 space-y-4">
-                  <h3 className="text-lg lg:text-xl font-bold tracking-tight">{t.needSupport}</h3>
-                  <p className="text-sm text-emerald-50 font-medium opacity-90 leading-relaxed max-w-[280px]">
-                    {t.supportText}
-                  </p>
-                  <button className="bg-white text-emerald-600 px-6 py-3 rounded-2xl font-bold text-xs uppercase tracking-widest shadow-lg hover:scale-105 transition-transform active:scale-95">
-                    {t.liveChat}
-                  </button>
-                </div>
-                <Plus className="absolute -bottom-10 -right-10 size-32 lg:size-48 opacity-10 rotate-12" />
-              </div>
-            </div>
           </div>
 
           <PortfolioHealth />
