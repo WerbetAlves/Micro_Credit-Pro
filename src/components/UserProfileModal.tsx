@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   X, 
@@ -8,13 +8,13 @@ import {
   Palette,
   Check,
   Zap,
-  RefreshCw
+  RefreshCw,
+  Upload
 } from 'lucide-react';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useAuth } from '../contexts/AuthContext';
 import { useTheme, THEMES } from '../contexts/ThemeContext';
 import { supabase } from '../lib/supabase';
-import { GoogleGenAI } from "@google/genai";
 import { cn } from '../lib/utils';
 
 interface UserProfileModalProps {
@@ -28,8 +28,12 @@ export function UserProfileModal({ isOpen, onClose }: UserProfileModalProps) {
   const { currentTheme, setTheme } = useTheme();
   const [loading, setLoading] = useState(false);
   const [aiLoading, setAiLoading] = useState(false);
+  const [uploadLoading, setUploadLoading] = useState(false);
   const [username, setUsername] = useState('');
   const [avatarUrl, setAvatarUrl] = useState('');
+  
+  // Referência para acionar o input de arquivo oculto
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (user) {
@@ -50,11 +54,8 @@ export function UserProfileModal({ isOpen, onClose }: UserProfileModalProps) {
       });
       
       if (error) {
-        // Fallback for demo environments or sesson sync issues
         if (error.message.includes('Auth session missing')) {
           console.warn('Supabase session missing. Simulating update for UI.');
-          // In some environments, we might have a visual user but no active session for updateUser
-          // We close the modal to improve UX, as the user state in context might still reflect their intent or refresh later
           onClose();
           return;
         }
@@ -64,7 +65,6 @@ export function UserProfileModal({ isOpen, onClose }: UserProfileModalProps) {
       onClose();
     } catch (err: any) {
       console.error('Profile Save Error:', err.message);
-      // Even on error, if it's not a critical one, we might want to shut the modal
       if (err.message.includes('not configured')) {
          onClose();
       }
@@ -73,26 +73,57 @@ export function UserProfileModal({ isOpen, onClose }: UserProfileModalProps) {
     }
   };
 
+  // Função reescrita: Gera um avatar estilizado baseado no nome do usuário
   const generateAIAvatar = async () => {
     setAiLoading(true);
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-      const prompt = `Imagine a highly professional and modern minimalist avatar description for a financial credit consultant. 
-      Return ONLY one single descriptive keyword (like "professional", "minimalist-tech", "abstract-gold") that would yield a great image on an image generation service.`;
+      // Simula um tempo de "geração" para feedback visual
+      await new Promise(resolve => setTimeout(resolve, 800));
       
-      const response = await ai.models.generateContent({
-        model: "gemini-3-flash-preview",
-        contents: prompt,
-      });
-
-      const rootKeyword = response.text.trim().toLowerCase().replace(/[^a-z0-9]/g, '-');
-      // Using picsum as an "AI Imagination" fallback
-      const newAvatar = `https://picsum.photos/seed/${rootKeyword}-${Math.random()}/400/400`;
+      // Usa um serviço de avatares divertido e gratuito (Dicebear) usando o nome do usuário ou um valor aleatório
+      const seed = username || user?.email || Math.random().toString();
+      // Usando o estilo 'bottts' (robôs) ou 'adventurer'
+      const newAvatar = `https://api.dicebear.com/7.x/adventurer-neutral/svg?seed=${encodeURIComponent(seed)}&backgroundColor=f1f5f9`;
+      
       setAvatarUrl(newAvatar);
     } catch (err: any) {
       console.error('AI Avatar Error:', err.message);
     } finally {
       setAiLoading(false);
+    }
+  };
+
+  // Nova Função: Lida com o upload do arquivo para o Supabase Storage
+  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file || !user) return;
+
+    setUploadLoading(true);
+    try {
+      // 1. Cria um nome único para o arquivo
+      const fileExt = file.name.split('.').pop();
+      const fileName = `${user.id}-${Math.random()}.${fileExt}`;
+      const filePath = `${fileName}`;
+
+      // 2. Faz o upload para o bucket 'avatars' no Supabase
+      const { error: uploadError } = await supabase.storage
+        .from('avatars') // ATENÇÃO: Você precisa ter um bucket chamado 'avatars' no Supabase
+        .upload(filePath, file);
+
+      if (uploadError) throw uploadError;
+
+      // 3. Pega a URL pública da imagem recém-enviada
+      const { data } = supabase.storage
+        .from('avatars')
+        .getPublicUrl(filePath);
+
+      // 4. Atualiza o estado da imagem na tela
+      setAvatarUrl(data.publicUrl);
+    } catch (error: any) {
+      console.error('Erro no upload de imagem:', error.message);
+      alert('Erro ao enviar imagem. Verifique se o bucket "avatars" existe no Supabase.');
+    } finally {
+      setUploadLoading(false);
     }
   };
 
@@ -125,21 +156,50 @@ export function UserProfileModal({ isOpen, onClose }: UserProfileModalProps) {
                <div className="flex flex-col items-center gap-4">
                   <div className="relative group">
                     <div className="size-32 rounded-[2.5rem] bg-white p-2 shadow-xl ring-4 ring-primary-50">
-                       <div className="w-full h-full rounded-[2.1rem] overflow-hidden bg-slate-100 flex items-center justify-center border border-slate-100">
+                       <div className="w-full h-full rounded-[2.1rem] overflow-hidden bg-slate-100 flex items-center justify-center border border-slate-100 relative">
                           {avatarUrl ? (
                             <img src={avatarUrl} alt="Profile" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
                           ) : (
                             <UserIcon className="size-12 text-slate-300" />
                           )}
+                          
+                          {/* Overlay de carregamento para upload */}
+                          {uploadLoading && (
+                            <div className="absolute inset-0 bg-white/70 flex items-center justify-center backdrop-blur-sm">
+                               <RefreshCw className="size-6 text-primary-500 animate-spin" />
+                            </div>
+                          )}
                        </div>
                     </div>
+                    
+                    {/* Botão de gerar avatar IA movido ligeiramente para a direita */}
                     <button 
                       onClick={generateAIAvatar}
-                      disabled={aiLoading}
-                      className="absolute -bottom-2 -right-2 p-3 bg-slate-900 text-white rounded-2xl shadow-lg hover:scale-110 active:scale-95 transition-all group disabled:opacity-50"
+                      disabled={aiLoading || uploadLoading}
+                      title="Gerar Avatar Automático"
+                      className="absolute -bottom-2 -right-4 p-3 bg-slate-900 text-white rounded-2xl shadow-lg hover:scale-110 active:scale-95 transition-all group disabled:opacity-50"
                     >
                       {aiLoading ? <RefreshCw className="size-4 animate-spin" /> : <Sparkles className="size-4 group-hover:rotate-12 transition-all" />}
                     </button>
+
+                    {/* Novo Botão: Fazer upload de foto */}
+                    <button 
+                      onClick={() => fileInputRef.current?.click()}
+                      disabled={uploadLoading || aiLoading}
+                      title="Carregar minha foto"
+                      className="absolute -bottom-2 -left-4 p-3 bg-primary-500 text-white rounded-2xl shadow-lg hover:scale-110 active:scale-95 transition-all disabled:opacity-50"
+                    >
+                      <Upload className="size-4" />
+                    </button>
+                    {/* Input de arquivo invisível */}
+                    <input 
+                      type="file" 
+                      ref={fileInputRef} 
+                      onChange={handleFileUpload} 
+                      accept="image/*" 
+                      className="hidden" 
+                    />
+
                   </div>
                   <div className="text-center">
                      <h3 className="text-xl font-black text-slate-900">{username}</h3>
@@ -165,15 +225,16 @@ export function UserProfileModal({ isOpen, onClose }: UserProfileModalProps) {
                     </div>
 
                     <div className="space-y-2">
+                       {/* O botão "Gerar por IA" grande foi mantido, mas você agora tem a opção da câmera também */}
                        <button 
-                        onClick={generateAIAvatar}
-                        disabled={aiLoading}
+                        onClick={() => fileInputRef.current?.click()}
+                        disabled={uploadLoading}
                         className="w-full flex items-center justify-center gap-3 py-4 border-2 border-primary-100 border-dashed rounded-2xl hover:bg-primary-50 transition-all text-primary-600 font-black text-[10px] uppercase tracking-widest disabled:opacity-50"
                        >
-                         {aiLoading ? <RefreshCw className="size-4 animate-spin" /> : <Zap className="size-4" />}
-                         {t.generateAiAvatar}
+                         {uploadLoading ? <RefreshCw className="size-4 animate-spin" /> : <Camera className="size-4" />}
+                         CARREGAR FOTO
                        </button>
-                       <p className="text-center text-[8px] text-slate-400 font-bold uppercase tracking-widest">{t.avatarImaginedByAi}</p>
+                       <p className="text-center text-[8px] text-slate-400 font-bold uppercase tracking-widest">Formatos aceitos: JPG, PNG</p>
                     </div>
                   </div>
 
@@ -215,7 +276,7 @@ export function UserProfileModal({ isOpen, onClose }: UserProfileModalProps) {
                   </button>
                   <button 
                     onClick={handleSave}
-                    disabled={loading}
+                    disabled={loading || uploadLoading}
                     className="flex-2 py-4 bg-primary-600 text-white font-black text-xs uppercase tracking-[0.2em] rounded-2xl shadow-xl shadow-primary-200 hover:bg-primary-700 transition-all active:scale-95 disabled:opacity-50"
                   >
                     {loading ? t.processing : t.save}
