@@ -42,12 +42,13 @@ export function Sidebar({className, isOpen, onClose}: SidebarProps) {
         onClick={onClose}
       />
 
+      {/* Alteramos o h-screen para h-[100dvh] e adicionamos overflow-y-auto nesta linha abaixo */}
       <aside className={cn(
-        "fixed left-0 top-0 h-screen bg-white border-r border-slate-100 p-6 z-[70] transition-transform duration-300 ease-in-out lg:translate-x-0 w-72 flex flex-col",
+        "fixed left-0 top-0 h-[100dvh] overflow-y-auto bg-white border-r border-slate-100 p-6 z-[70] transition-transform duration-300 ease-in-out lg:translate-x-0 w-72 flex flex-col",
         isOpen ? "translate-x-0" : "-translate-x-full",
         className
       )}>
-        <div className="flex items-center justify-between mb-10">
+        <div className="flex items-center justify-between mb-10 shrink-0">
           <div className="flex items-center gap-3 px-2">
             <div className="w-10 h-10 bg-primary-500 rounded-xl flex items-center justify-center shadow-lg shadow-primary-100">
               <Landmark className="text-white size-6" />
@@ -59,7 +60,8 @@ export function Sidebar({className, isOpen, onClose}: SidebarProps) {
           </button>
         </div>
 
-        <nav className="flex-1 flex flex-col gap-2">
+        {/* Adicionamos margem inferior (mb-6) para dar um respiro antes do rodapé */}
+        <nav className="flex-1 flex flex-col gap-2 mb-6">
           {navItems.map((item) => (
             <button
               key={item.name}
@@ -82,7 +84,8 @@ export function Sidebar({className, isOpen, onClose}: SidebarProps) {
           ))}
         </nav>
 
-        <div className="pt-6 border-t border-slate-100 space-y-4">
+        {/* Adicionamos shrink-0 para evitar que o rodapé seja esmagado caso a tela seja muito pequena */}
+        <div className="pt-6 border-t border-slate-100 space-y-4 shrink-0">
           {/* Language Toggle */}
           <div className="px-4 py-2">
             <div className="flex items-center gap-3 text-slate-400 mb-2">
