@@ -1,15 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
-  Wallet, 
-  Plus, 
-  X, 
-  Landmark, 
-  Banknote, 
-  Smartphone,
-  ChevronRight,
-  PlusCircle,
-  Link2
+  Wallet, Plus, X, Landmark, Banknote, Smartphone, ChevronRight, Link2, Trash2, Edit2
 } from 'lucide-react';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useAuth } from '../contexts/AuthContext';
@@ -29,9 +21,9 @@ export function WalletManager() {
   const [wallets, setWallets] = useState<WalletData[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [editingWallet, setEditingWallet] = useState<WalletData | null>(null);
 
   // Form State
+  const [editingWallet, setEditingWallet] = useState<WalletData | null>(null);
   const [name, setName] = useState('');
   const [type, setType] = useState<'physical' | 'bank' | 'digital'>('bank');
   const [initialBalance, setInitialBalance] = useState('');
@@ -40,18 +32,6 @@ export function WalletManager() {
     fetchWallets();
   }, [user]);
 
-  useEffect(() => {
-    if (editingWallet) {
-      setName(editingWallet.name);
-      setType(editingWallet.type);
-      setInitialBalance(editingWallet.balance.toString());
-    } else {
-      setName('');
-      setType('bank');
-      setInitialBalance('');
-    }
-  }, [editingWallet]);
-
   async function fetchWallets() {
     if (!user) return;
     setLoading(true);
@@ -59,13 +39,11 @@ export function WalletManager() {
       const { data, error } = await supabase
         .from('wallets')
         .select('*')
-        .eq('user_id', user.id);
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: true });
 
-      if (error) {
-        setWallets([{ id: 'default', name: t.mainPortfolio, type: 'bank', balance: 0 }]);
-      } else {
-        setWallets(data || []);
-      }
+      if (error) throw error;
+      setWallets(data || []);
     } catch (err) {
       console.error('Error fetching wallets:', err);
     } finally {
@@ -73,7 +51,38 @@ export function WalletManager() {
     }
   }
 
-  const handleAddWallet = async (e: React.FormEvent) => {
+  const openAddModal = () => {
+    setEditingWallet(null);
+    setName('');
+    setType('bank');
+    setInitialBalance('');
+    setIsModalOpen(true);
+  };
+
+  const openEditModal = (wallet: WalletData, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setEditingWallet(wallet);
+    setName(wallet.name);
+    setType(wallet.type);
+    setInitialBalance(wallet.balance.toString());
+    setIsModalOpen(true);
+  };
+
+  const handleDeleteWallet = async (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (confirm("Tem certeza que deseja excluir esta carteira?")) {
+      try {
+        const { error } = await supabase.from('wallets').delete().eq('id', id);
+        if (error) throw error;
+        setWallets(prev => prev.filter(w => w.id !== id));
+      } catch (err: any) {
+        console.error('Error deleting wallet:', err.message);
+        alert("Erro ao excluir carteira.");
+      }
+    }
+  };
+
+  const handleSaveWallet = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user) return;
 
@@ -81,28 +90,21 @@ export function WalletManager() {
       const balanceNum = parseFloat(initialBalance) || 0;
       
       if (editingWallet) {
-        const { data: updatedWallet, error } = await supabase
+        // Atualizar carteira existente
+        const { data, error } = await supabase
           .from('wallets')
-          .update({
-            name,
-            type,
-            balance: balanceNum
-          })
+          .update({ name, type, balance: balanceNum })
           .eq('id', editingWallet.id)
           .select()
           .single();
 
         if (error) throw error;
-        setWallets(prev => prev.map(w => w.id === editingWallet.id ? updatedWallet : w));
+        setWallets(prev => prev.map(w => w.id === editingWallet.id ? data : w));
       } else {
+        // Criar nova carteira
         const { data: newWallet, error } = await supabase
           .from('wallets')
-          .insert([{
-            name,
-            type,
-            balance: balanceNum,
-            user_id: user.id
-          }])
+          .insert([{ name, type, balance: balanceNum, user_id: user.id }])
           .select()
           .single();
 
@@ -110,54 +112,17 @@ export function WalletManager() {
 
         if (balanceNum > 0) {
           await supabase.from('transactions').insert([{
-            type: 'income',
-            category: 'adjustment',
-            amount: balanceNum,
-            description: `${t.initialBalance} - ${name}`,
-            user_id: user.id,
-            wallet_id: newWallet.id
+            type: 'income', category: 'adjustment', amount: balanceNum,
+            description: `Saldo Inicial - ${name}`, user_id: user.id, wallet_id: newWallet.id
           }]);
         }
         setWallets(prev => [...prev, newWallet]);
       }
-      
+
       setIsModalOpen(false);
-      setEditingWallet(null);
     } catch (err: any) {
       console.error('Error saving wallet:', err.message);
-      // Mock for demo
-      const mockWallet: WalletData = {
-        id: editingWallet?.id || Math.random().toString(36).substr(2, 9),
-        name,
-        type,
-        balance: parseFloat(initialBalance) || 0
-      };
-      
-      if (editingWallet) {
-        setWallets(prev => prev.map(w => w.id === editingWallet.id ? mockWallet : w));
-      } else {
-        setWallets(prev => [...prev, mockWallet]);
-      }
-      setIsModalOpen(false);
-      setEditingWallet(null);
-    }
-  };
-
-  const handleDeleteWallet = async (id: string) => {
-    if (!user || id === 'default') return;
-    if (!window.confirm(t.confirmDeleteWallet)) return;
-
-    try {
-      const { error } = await supabase
-        .from('wallets')
-        .delete()
-        .eq('id', id);
-
-      if (error) throw error;
-      setWallets(prev => prev.filter(w => w.id !== id));
-    } catch (err: any) {
-      console.error('Error deleting wallet:', err.message);
-      setWallets(prev => prev.filter(w => w.id !== id));
+      alert("Erro ao salvar carteira. Verifique se as tabelas foram criadas no banco de dados.");
     }
   };
 
@@ -180,10 +145,7 @@ export function WalletManager() {
           {t.myWallets}
         </h3>
         <button 
-          onClick={() => {
-            setEditingWallet(null);
-            setIsModalOpen(true);
-          }}
+          onClick={openAddModal}
           className="p-2 bg-emerald-50 text-emerald-600 rounded-xl hover:bg-emerald-100 transition-colors"
         >
           <Plus className="size-5" />
@@ -196,12 +158,18 @@ export function WalletManager() {
             key={wallet.id}
             initial={{ opacity: 0, scale: 0.9 }}
             animate={{ opacity: 1, scale: 1 }}
-            className="group relative bg-white rounded-[2rem] p-6 border border-slate-100 hover:border-emerald-200 hover:shadow-xl hover:shadow-emerald-50 transition-all cursor-pointer"
-            onClick={() => {
-              setEditingWallet(wallet);
-              setIsModalOpen(true);
-            }}
+            className="group relative bg-white rounded-[2rem] p-6 border border-slate-100 hover:border-emerald-200 hover:shadow-xl hover:shadow-emerald-50 transition-all cursor-pointer overflow-hidden"
           >
+            {/* Ações Rápidas (Editar / Excluir) que aparecem ao passar o mouse */}
+            <div className="absolute top-4 right-4 flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+               <button onClick={(e) => openEditModal(wallet, e)} className="p-2 bg-slate-50 text-slate-400 rounded-lg hover:bg-blue-50 hover:text-blue-600 transition-colors">
+                  <Edit2 className="size-4" />
+               </button>
+               <button onClick={(e) => handleDeleteWallet(wallet.id, e)} className="p-2 bg-slate-50 text-slate-400 rounded-lg hover:bg-red-50 hover:text-red-600 transition-colors">
+                  <Trash2 className="size-4" />
+               </button>
+            </div>
+
             <div className="flex items-start justify-between mb-6">
               <div className={cn(
                 "p-3 rounded-2xl transition-colors",
@@ -211,25 +179,11 @@ export function WalletManager() {
               )}>
                 {getIcon(wallet.type)}
               </div>
-              <div className="flex items-center gap-2">
-                {wallet.id !== 'default' && (
-                  <button 
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleDeleteWallet(wallet.id);
-                    }}
-                    className="p-2 text-slate-300 hover:text-rose-500 hover:bg-rose-50 rounded-lg transition-all"
-                  >
-                    <X className="size-4" />
-                  </button>
-                )}
-                <ChevronRight className="size-4 text-slate-300 group-hover:text-emerald-400 transform group-hover:translate-x-1 transition-all" />
-              </div>
             </div>
             
             <div className="space-y-1">
               <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">{t[wallet.type + 'Wallet'] || wallet.type}</p>
-              <h4 className="text-lg font-bold text-slate-900">{wallet.name}</h4>
+              <h4 className="text-lg font-bold text-slate-900 pr-16 truncate">{wallet.name}</h4>
             </div>
 
             <div className="mt-4 pt-4 border-t border-slate-50">
@@ -238,23 +192,12 @@ export function WalletManager() {
           </motion.div>
         ))}
 
-        {/* Open Finance Shortcut */}
         <motion.div 
-          onClick={() => {}} // Integration point
-          className="bg-emerald-600 rounded-[2rem] p-6 text-white relative overflow-hidden shadow-xl shadow-emerald-50 cursor-pointer hover:scale-[1.02] transition-all group"
+          onClick={openAddModal}
+          className="bg-emerald-50/50 rounded-[2rem] p-6 text-emerald-600 border-2 border-dashed border-emerald-200 flex flex-col items-center justify-center cursor-pointer hover:bg-emerald-50 hover:border-emerald-300 transition-all min-h-[180px]"
         >
-          <div className="relative z-10 space-y-4">
-             <div className="flex items-center gap-2">
-                <Link2 className="size-4 text-emerald-200" />
-                <span className="text-[10px] font-black uppercase tracking-widest text-emerald-200 opacity-80">{t.openFinance}</span>
-             </div>
-             <h3 className="text-lg font-bold leading-tight">{t.connectBank}</h3>
-             <div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-widest bg-emerald-500/30 w-fit px-3 py-1.5 rounded-lg border border-emerald-400/20">
-                <PlusCircle className="size-3" />
-                Auth Secure
-             </div>
-          </div>
-          <Landmark className="absolute -bottom-6 -right-6 size-32 opacity-10 rotate-12 group-hover:scale-110 transition-transform duration-500" />
+           <Plus className="size-8 mb-2 opacity-50" />
+           <span className="text-sm font-bold tracking-tight">Nova Carteira</span>
         </motion.div>
       </div>
 
@@ -262,41 +205,27 @@ export function WalletManager() {
         {isModalOpen && (
           <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
             <motion.div 
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
+              initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
               onClick={() => setIsModalOpen(false)}
               className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm"
             />
             <motion.div 
-              initial={{ opacity: 0, scale: 0.95, y: 20 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              initial={{ opacity: 0, scale: 0.95, y: 20 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95, y: 20 }}
               className="relative w-full max-w-md bg-white rounded-[2.5rem] p-8 shadow-2xl border border-slate-100"
             >
               <div className="flex items-center justify-between mb-8">
-                <h3 className="text-xl font-black text-slate-900">
-                  {editingWallet ? t.editWallet : t.addWallet}
-                </h3>
-                <button 
-                  onClick={() => {
-                    setIsModalOpen(false);
-                    setEditingWallet(null);
-                  }} 
-                  className="p-2 hover:bg-slate-50 rounded-xl"
-                >
+                <h3 className="text-xl font-black text-slate-900">{editingWallet ? "Editar Carteira" : t.addWallet}</h3>
+                <button onClick={() => setIsModalOpen(false)} className="p-2 hover:bg-slate-50 rounded-xl">
                   <X className="size-5 text-slate-400" />
                 </button>
               </div>
 
-              <form onSubmit={handleAddWallet} className="space-y-6">
+              <form onSubmit={handleSaveWallet} className="space-y-6">
                 <div className="space-y-2">
                   <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-4">{t.walletName}</label>
                   <input 
-                    type="text" 
-                    value={name}
-                    onChange={e => setName(e.target.value)}
-                    placeholder="Ex: Cash flow PT-BR"
+                    type="text" value={name} onChange={e => setName(e.target.value)}
+                    placeholder="Ex: Minha Conta Nubank"
                     className="w-full bg-slate-50 border-none rounded-2xl px-6 py-4 text-sm font-bold focus:ring-2 focus:ring-emerald-100 outline-none"
                     required
                   />
@@ -311,9 +240,7 @@ export function WalletManager() {
                       { id: 'digital', icon: Smartphone, label: t.digitalWallet }
                     ].map((opt) => (
                       <button
-                        key={opt.id}
-                        type="button"
-                        onClick={() => setType(opt.id as any)}
+                        key={opt.id} type="button" onClick={() => setType(opt.id as any)}
                         className={cn(
                           "flex flex-col items-center gap-2 p-4 rounded-2xl border-2 transition-all",
                           type === opt.id ? "bg-emerald-50 border-emerald-500 text-emerald-600" : "bg-slate-50 border-transparent text-slate-400"
@@ -329,10 +256,7 @@ export function WalletManager() {
                 <div className="space-y-2">
                   <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-4">{t.initialBalance}</label>
                   <input 
-                    type="number" 
-                    step="0.01"
-                    value={initialBalance}
-                    onChange={e => setInitialBalance(e.target.value)}
+                    type="number" step="0.01" value={initialBalance} onChange={e => setInitialBalance(e.target.value)}
                     placeholder="0.00"
                     className="w-full bg-slate-50 border-none rounded-2xl px-6 py-4 text-sm font-bold focus:ring-2 focus:ring-emerald-100 outline-none"
                   />
