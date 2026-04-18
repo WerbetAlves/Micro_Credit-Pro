@@ -33,7 +33,7 @@ export function Dashboard() {
     if (!user) return;
 
     try {
-      // 1. Total Capital & Active Loans
+      // 1. Busca Empréstimos (Dinheiro Emprestado)
       const { data: loans, error: loansError } = await supabase
         .from('loans')
         .select('*')
@@ -41,13 +41,25 @@ export function Dashboard() {
       
       if (loansError) throw loansError;
 
-      const totalCap = (loans || []).reduce((acc, l) => acc + Number(l.principal_amount), 0);
+      const totalLoansCapital = (loans || []).reduce((acc, l) => acc + Number(l.principal_amount), 0);
       const activeCount = (loans || []).filter(l => l.status === 'active' || l.status === 'pending').length;
       const defaultCount = (loans || []).filter(l => l.status === 'default').length;
       const defRate = loans?.length ? (defaultCount / loans.length) * 100 : 0;
-      const avgAmt = loans?.length ? totalCap / loans.length : 0;
+      const avgAmt = loans?.length ? totalLoansCapital / loans.length : 0;
 
-      // 2. Monthly Profit (Interests from paid installments this month)
+      // 2. Busca Saldo das Carteiras (Dinheiro em Caixa)
+      let totalWalletBalance = 0;
+      const { data: wallets, error: walletsError } = await supabase
+        .from('wallets')
+        .select('balance')
+        .eq('user_id', user.id);
+      
+      // Se não der erro, soma o saldo de todas as carteiras
+      if (!walletsError && wallets) {
+        totalWalletBalance = wallets.reduce((acc, w) => acc + Number(w.balance), 0);
+      }
+
+      // 3. Lucro Mensal (Juros de parcelas pagas no mês atual)
       const now = new Date();
       const firstDay = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0];
       const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().split('T')[0];
@@ -62,12 +74,12 @@ export function Dashboard() {
 
       if (instError) throw instError;
 
-      // Mock calculation for profit (simplified: usually profit is interest, 
-      // but for MVP let's show total collected this month or a % of it)
       const monthlyP = (paidInstallments || []).reduce((acc, i) => acc + Number(i.amount), 0);
 
+      // 4. Consolida tudo no Estado
       setStats({
-        totalCapital: totalCap,
+        // Capital Total agora é Empréstimos + Saldo nas Carteiras!
+        totalCapital: totalLoansCapital + totalWalletBalance,
         monthlyProfit: monthlyP,
         activeLoans: activeCount,
         defaultRate: defRate,
@@ -92,10 +104,9 @@ export function Dashboard() {
       <main className="flex-1 lg:ml-72 min-h-screen pb-20 w-full transition-all duration-300">
         <Header title={t.dashboard} onMenuClick={() => setIsSidebarOpen(true)} />
 
-        {/* Container principal com largura máxima para não esticar demais em monitores ultrawide */}
         <div className="px-4 md:px-6 lg:px-8 py-6 lg:py-10 w-full max-w-[1600px] mx-auto space-y-8 lg:space-y-12 transition-all">
           
-          {/* KPI Grid - Mantido no topo */}
+          {/* KPI Grid - O Card "Total Capital" agora refletirá a nova conta */}
           <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 lg:gap-6">
             <KPICard 
               label={t.totalCapital} 
@@ -124,7 +135,7 @@ export function Dashboard() {
             />
           </section>
 
-          {/* LAYOUT DO MAIN CONTENT: Simulador movido para cima */}
+          {/* LAYOUT DO MAIN CONTENT: Simulador no topo como configuramos antes */}
           <div className="space-y-8 lg:space-y-12 w-full">
             
             {/* LINHA 1: Simulador Ocupando a Largura Total (12/12) */}
@@ -137,19 +148,16 @@ export function Dashboard() {
               </div>
             </div>
 
-            {/* LINHA 2: Cobranças (8/12 colunas) e Sidebar Direita (4/12 colunas) */}
+            {/* LINHA 2: Cobranças e Sidebar Direita */}
             <div className="grid grid-cols-1 xl:grid-cols-12 gap-6 md:gap-8 lg:gap-12">
-              {/* Lado Esquerdo - Em telas menores ocupará 100%, em maiores ocupará 8 de 12 partes */}
               <div className="xl:col-span-8 w-full min-w-0">
                 <UpcomingCollections />
               </div>
 
-              {/* Lado Direito - Em telas menores ocupará 100%, em maiores ocupará 4 de 12 partes */}
               <div className="xl:col-span-4 space-y-8 w-full min-w-0">
                 <AIAssistantDashboard />
                 <RecentActivity />
                 
-                {/* Cartão de Suporte */}
                 <div className="bg-emerald-600 rounded-[2rem] p-6 lg:p-8 text-white relative overflow-hidden shadow-xl shadow-emerald-100">
                   <div className="relative z-10 space-y-4">
                     <h3 className="text-lg lg:text-xl font-bold tracking-tight">{t.needSupport}</h3>
@@ -171,7 +179,6 @@ export function Dashboard() {
         </div>
       </main>
 
-      {/* Mobile Floating Trigger */}
       <button 
         onClick={scrollToSimulator}
         className="fixed bottom-6 right-6 lg:hidden w-14 h-14 bg-emerald-600 text-white rounded-full flex items-center justify-center shadow-2xl shadow-emerald-200 z-50 hover:scale-110 active:scale-95 transition-all"
