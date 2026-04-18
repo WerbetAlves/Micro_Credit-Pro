@@ -29,6 +29,7 @@ export function WalletManager() {
   const [wallets, setWallets] = useState<WalletData[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [editingWallet, setEditingWallet] = useState<WalletData | null>(null);
 
   // Form State
   const [name, setName] = useState('');
@@ -39,19 +40,28 @@ export function WalletManager() {
     fetchWallets();
   }, [user]);
 
+  useEffect(() => {
+    if (editingWallet) {
+      setName(editingWallet.name);
+      setType(editingWallet.type);
+      setInitialBalance(editingWallet.balance.toString());
+    } else {
+      setName('');
+      setType('bank');
+      setInitialBalance('');
+    }
+  }, [editingWallet]);
+
   async function fetchWallets() {
     if (!user) return;
     setLoading(true);
     try {
-      // In a real app we'd have a 'wallets' table
-      // For this MVP, we'll try to fetch or fallback to a default one
       const { data, error } = await supabase
         .from('wallets')
         .select('*')
         .eq('user_id', user.id);
 
       if (error) {
-        // Table might not exist yet, let's show a default one for now
         setWallets([{ id: 'default', name: t.mainPortfolio, type: 'bank', balance: 0 }]);
       } else {
         setWallets(data || []);
@@ -70,46 +80,84 @@ export function WalletManager() {
     try {
       const balanceNum = parseFloat(initialBalance) || 0;
       
-      const { data: newWallet, error } = await supabase
-        .from('wallets')
-        .insert([{
-          name,
-          type,
-          balance: balanceNum,
-          user_id: user.id
-        }])
-        .select()
-        .single();
+      if (editingWallet) {
+        const { data: updatedWallet, error } = await supabase
+          .from('wallets')
+          .update({
+            name,
+            type,
+            balance: balanceNum
+          })
+          .eq('id', editingWallet.id)
+          .select()
+          .single();
 
-      if (error) throw error;
+        if (error) throw error;
+        setWallets(prev => prev.map(w => w.id === editingWallet.id ? updatedWallet : w));
+      } else {
+        const { data: newWallet, error } = await supabase
+          .from('wallets')
+          .insert([{
+            name,
+            type,
+            balance: balanceNum,
+            user_id: user.id
+          }])
+          .select()
+          .single();
 
-      // If there's an initial balance, record it as a transaction
-      if (balanceNum > 0) {
-        await supabase.from('transactions').insert([{
-          type: 'income',
-          category: 'adjustment',
-          amount: balanceNum,
-          description: `${t.initialBalance} - ${name}`,
-          user_id: user.id,
-          wallet_id: newWallet.id // Assuming this column exists
-        }]);
+        if (error) throw error;
+
+        if (balanceNum > 0) {
+          await supabase.from('transactions').insert([{
+            type: 'income',
+            category: 'adjustment',
+            amount: balanceNum,
+            description: `${t.initialBalance} - ${name}`,
+            user_id: user.id,
+            wallet_id: newWallet.id
+          }]);
+        }
+        setWallets(prev => [...prev, newWallet]);
       }
-
-      setWallets(prev => [...prev, newWallet]);
+      
       setIsModalOpen(false);
-      setName('');
-      setInitialBalance('');
+      setEditingWallet(null);
     } catch (err: any) {
-      console.error('Error adding wallet:', err.message);
-      // For Demo purposes, if it fails because table doesn't exist, we just add it to local state
+      console.error('Error saving wallet:', err.message);
+      // Mock for demo
       const mockWallet: WalletData = {
-        id: Math.random().toString(36).substr(2, 9),
+        id: editingWallet?.id || Math.random().toString(36).substr(2, 9),
         name,
         type,
         balance: parseFloat(initialBalance) || 0
       };
-      setWallets(prev => [...prev, mockWallet]);
+      
+      if (editingWallet) {
+        setWallets(prev => prev.map(w => w.id === editingWallet.id ? mockWallet : w));
+      } else {
+        setWallets(prev => [...prev, mockWallet]);
+      }
       setIsModalOpen(false);
+      setEditingWallet(null);
+    }
+  };
+
+  const handleDeleteWallet = async (id: string) => {
+    if (!user || id === 'default') return;
+    if (!window.confirm(t.confirmDeleteWallet)) return;
+
+    try {
+      const { error } = await supabase
+        .from('wallets')
+        .delete()
+        .eq('id', id);
+
+      if (error) throw error;
+      setWallets(prev => prev.filter(w => w.id !== id));
+    } catch (err: any) {
+      console.error('Error deleting wallet:', err.message);
+      setWallets(prev => prev.filter(w => w.id !== id));
     }
   };
 
@@ -132,7 +180,10 @@ export function WalletManager() {
           {t.myWallets}
         </h3>
         <button 
-          onClick={() => setIsModalOpen(true)}
+          onClick={() => {
+            setEditingWallet(null);
+            setIsModalOpen(true);
+          }}
           className="p-2 bg-emerald-50 text-emerald-600 rounded-xl hover:bg-emerald-100 transition-colors"
         >
           <Plus className="size-5" />
@@ -146,6 +197,10 @@ export function WalletManager() {
             initial={{ opacity: 0, scale: 0.9 }}
             animate={{ opacity: 1, scale: 1 }}
             className="group relative bg-white rounded-[2rem] p-6 border border-slate-100 hover:border-emerald-200 hover:shadow-xl hover:shadow-emerald-50 transition-all cursor-pointer"
+            onClick={() => {
+              setEditingWallet(wallet);
+              setIsModalOpen(true);
+            }}
           >
             <div className="flex items-start justify-between mb-6">
               <div className={cn(
@@ -156,7 +211,20 @@ export function WalletManager() {
               )}>
                 {getIcon(wallet.type)}
               </div>
-              <ChevronRight className="size-4 text-slate-300 group-hover:text-emerald-400 transform group-hover:translate-x-1 transition-all" />
+              <div className="flex items-center gap-2">
+                {wallet.id !== 'default' && (
+                  <button 
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleDeleteWallet(wallet.id);
+                    }}
+                    className="p-2 text-slate-300 hover:text-rose-500 hover:bg-rose-50 rounded-lg transition-all"
+                  >
+                    <X className="size-4" />
+                  </button>
+                )}
+                <ChevronRight className="size-4 text-slate-300 group-hover:text-emerald-400 transform group-hover:translate-x-1 transition-all" />
+              </div>
             </div>
             
             <div className="space-y-1">
@@ -207,8 +275,16 @@ export function WalletManager() {
               className="relative w-full max-w-md bg-white rounded-[2.5rem] p-8 shadow-2xl border border-slate-100"
             >
               <div className="flex items-center justify-between mb-8">
-                <h3 className="text-xl font-black text-slate-900">{t.addWallet}</h3>
-                <button onClick={() => setIsModalOpen(false)} className="p-2 hover:bg-slate-50 rounded-xl">
+                <h3 className="text-xl font-black text-slate-900">
+                  {editingWallet ? t.editWallet : t.addWallet}
+                </h3>
+                <button 
+                  onClick={() => {
+                    setIsModalOpen(false);
+                    setEditingWallet(null);
+                  }} 
+                  className="p-2 hover:bg-slate-50 rounded-xl"
+                >
                   <X className="size-5 text-slate-400" />
                 </button>
               </div>

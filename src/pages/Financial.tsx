@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Search, Landmark, Wallet, Plus, Filter, ArrowUpRight, ArrowDownRight, ArrowRight, Calendar, User, FileText } from 'lucide-react';
+import { Search, Landmark, Wallet, Plus, Filter, ArrowUpRight, ArrowDownRight, ArrowRight, Calendar, User, FileText, X } from 'lucide-react';
 import { Sidebar } from '../components/Sidebar';
 import { WalletManager } from '../components/WalletManager';
 import { useLanguage } from '../contexts/LanguageContext';
@@ -30,6 +30,16 @@ export function Financial() {
   const [search, setSearch] = useState('');
   const [filterType, setFilterType] = useState<string>('all');
   const [filterCategory, setFilterCategory] = useState<string>('all');
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
+  const [wallets, setWallets] = useState<{id: string, name: string}[]>([]);
+
+  // Form State
+  const [type, setType] = useState<'income' | 'expense'>('income');
+  const [category, setCategory] = useState<Transaction['category']>('other');
+  const [amount, setAmount] = useState('');
+  const [description, setDescription] = useState('');
+  const [walletId, setWalletId] = useState('');
 
   // Stats
   const [stats, setStats] = useState({
@@ -40,7 +50,30 @@ export function Financial() {
 
   useEffect(() => {
     fetchTransactions();
+    fetchWallets();
   }, [user]);
+
+  useEffect(() => {
+    if (editingTransaction) {
+      setType(editingTransaction.type);
+      setCategory(editingTransaction.category);
+      setAmount(editingTransaction.amount.toString());
+      setDescription(editingTransaction.description || '');
+      setWalletId(editingTransaction.wallet_id || '');
+    } else {
+      setType('income');
+      setCategory('other');
+      setAmount('');
+      setDescription('');
+      setWalletId('');
+    }
+  }, [editingTransaction]);
+
+  async function fetchWallets() {
+    if (!user) return;
+    const { data } = await supabase.from('wallets').select('id, name');
+    setWallets(data || []);
+  }
 
   async function fetchTransactions() {
     if (!user) return;
@@ -77,9 +110,56 @@ export function Financial() {
     }
   }
 
+  const handleSaveTransaction = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!user) return;
+
+    try {
+      const txData = {
+        type,
+        category,
+        amount: parseFloat(amount),
+        description,
+        wallet_id: walletId || null,
+        user_id: user.id
+      };
+
+      if (editingTransaction) {
+        const { error } = await supabase
+          .from('transactions')
+          .update(txData)
+          .eq('id', editingTransaction.id);
+        if (error) throw error;
+      } else {
+        const { error } = await supabase
+          .from('transactions')
+          .insert([txData]);
+        if (error) throw error;
+      }
+
+      fetchTransactions();
+      setIsModalOpen(false);
+    } catch (err: any) {
+      console.error('Error saving transaction:', err.message);
+      alert('Mock Mode: Connection simulation.');
+      setIsModalOpen(false);
+    }
+  };
+
+  const handleDeleteTransaction = async (id: string) => {
+    if (!user || !window.confirm(t.confirmDeleteTransaction)) return;
+    try {
+      const { error } = await supabase.from('transactions').delete().eq('id', id);
+      if (error) throw error;
+      fetchTransactions();
+    } catch (err: any) {
+      console.error('Error deleting transaction:', err.message);
+    }
+  };
+
   const filteredTransactions = transactions.filter(tx => {
     const matchesSearch = tx.description?.toLowerCase().includes(search.toLowerCase()) || 
-                          tx.clients?.full_name.toLowerCase().includes(search.toLowerCase());
+                          tx.clients?.full_name?.toLowerCase().includes(search.toLowerCase());
     const matchesType = filterType === 'all' || tx.type === filterType;
     const matchesCategory = filterCategory === 'all' || tx.category === filterCategory;
     return matchesSearch && matchesType && matchesCategory;
@@ -111,6 +191,16 @@ export function Financial() {
             </button>
             <h1 className="text-lg lg:text-xl font-bold tracking-tight text-slate-900 truncate">{t.financialOverview}</h1>
           </div>
+          <button 
+            onClick={() => {
+              setEditingTransaction(null);
+              setIsModalOpen(true);
+            }}
+            className="flex items-center gap-2 bg-slate-900 text-white px-4 lg:px-6 py-2.5 rounded-xl font-black text-[10px] lg:text-xs uppercase tracking-widest hover:bg-slate-800 transition-all active:scale-95 shadow-xl shadow-slate-100"
+          >
+            <Plus className="size-4" />
+            <span className="hidden sm:inline">{t.addTransaction}</span>
+          </button>
         </header>
 
         <div className="px-4 lg:px-8 py-8 w-full transition-all space-y-8">
@@ -277,12 +367,31 @@ export function Financial() {
                           </span>
                         </td>
                         <td className="px-6 py-5 text-right">
-                          <span className={cn(
-                            "text-sm font-black tracking-tighter",
-                            tx.type === 'income' ? "text-emerald-600" : "text-slate-900"
-                          )}>
-                            {tx.type === 'income' ? '+' : '-'} {formatCurrency(tx.amount)}
-                          </span>
+                          <div className="flex items-center justify-end gap-2">
+                            <span className={cn(
+                              "text-sm font-black tracking-tighter",
+                              tx.type === 'income' ? "text-emerald-600" : "text-slate-900"
+                            )}>
+                              {tx.type === 'income' ? '+' : '-'} {formatCurrency(tx.amount)}
+                            </span>
+                            <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity ml-4">
+                              <button 
+                                onClick={() => {
+                                  setEditingTransaction(tx);
+                                  setIsModalOpen(true);
+                                }}
+                                className="p-2 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-all"
+                              >
+                                <FileText className="size-4" />
+                              </button>
+                              <button 
+                                onClick={() => handleDeleteTransaction(tx.id)}
+                                className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-all"
+                              >
+                                <X className="size-4" />
+                              </button>
+                            </div>
+                          </div>
                         </td>
                       </tr>
                     ))
@@ -292,6 +401,128 @@ export function Financial() {
             </div>
           </div>
         </div>
+
+        <AnimatePresence>
+          {isModalOpen && (
+            <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+              <motion.div 
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                onClick={() => setIsModalOpen(false)}
+                className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm"
+              />
+              <motion.div 
+                initial={{ opacity: 0, scale: 0.95, y: 20 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.95, y: 20 }}
+                className="relative w-full max-w-md bg-white rounded-[2.5rem] p-8 shadow-2xl border border-slate-100"
+              >
+                <div className="flex items-center justify-between mb-8">
+                  <h3 className="text-xl font-black text-slate-900">
+                    {editingTransaction ? t.editTransaction : t.addTransaction}
+                  </h3>
+                  <button 
+                    onClick={() => {
+                      setIsModalOpen(false);
+                      setEditingTransaction(null);
+                    }} 
+                    className="p-2 hover:bg-slate-50 rounded-xl"
+                  >
+                    <X className="size-5 text-slate-400" />
+                  </button>
+                </div>
+
+                <form onSubmit={handleSaveTransaction} className="space-y-6">
+                  <div className="grid grid-cols-2 gap-3">
+                    <button
+                      type="button"
+                      onClick={() => setType('income')}
+                      className={cn(
+                        "py-4 rounded-2xl font-black text-[10px] uppercase tracking-widest border-2 transition-all",
+                        type === 'income' ? "bg-emerald-50 border-emerald-500 text-emerald-600" : "bg-slate-50 border-transparent text-slate-400"
+                      )}
+                    >
+                      {t.income}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setType('expense')}
+                      className={cn(
+                        "py-4 rounded-2xl font-black text-[10px] uppercase tracking-widest border-2 transition-all",
+                        type === 'expense' ? "bg-rose-50 border-rose-500 text-rose-600" : "bg-slate-50 border-transparent text-slate-400"
+                      )}
+                    >
+                      {t.expense}
+                    </button>
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-4">{t.description}</label>
+                    <input 
+                      type="text" 
+                      value={description}
+                      onChange={e => setDescription(e.target.value)}
+                      placeholder="Ex: Aluguel, Provisão..."
+                      className="w-full bg-slate-50 border-none rounded-2xl px-6 py-4 text-sm font-bold focus:ring-2 focus:ring-emerald-100 outline-none"
+                      required
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-4">{t.amount}</label>
+                      <input 
+                        type="number" 
+                        step="0.01"
+                        value={amount}
+                        onChange={e => setAmount(e.target.value)}
+                        placeholder="0.00"
+                        className="w-full bg-slate-50 border-none rounded-2xl px-6 py-4 text-sm font-bold focus:ring-2 focus:ring-emerald-100 outline-none"
+                        required
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-4">{t.category}</label>
+                      <select 
+                        value={category}
+                        onChange={e => setCategory(e.target.value as any)}
+                        className="w-full bg-slate-50 border-none rounded-2xl px-6 py-4 text-sm font-bold focus:ring-2 focus:ring-emerald-100 outline-none appearance-none"
+                      >
+                        <option value="other">{t.other}</option>
+                        <option value="fee">{t.fee}</option>
+                        <option value="adjustment">{t.adjustment}</option>
+                        <option value="loan_disbursement">{t.loan_disbursement}</option>
+                        <option value="payment_received">{t.payment_received}</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-4">{t.selectWallet}</label>
+                    <select 
+                      value={walletId}
+                      onChange={e => setWalletId(e.target.value)}
+                      className="w-full bg-slate-50 border-none rounded-2xl px-6 py-4 text-sm font-bold focus:ring-2 focus:ring-emerald-100 outline-none appearance-none"
+                    >
+                      <option value="">{t.selectWallet}</option>
+                      {wallets.map(w => (
+                        <option key={w.id} value={w.id}>{w.name}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <button 
+                    type="submit"
+                    className="w-full bg-slate-900 text-white rounded-2xl py-4 font-black text-xs uppercase tracking-widest hover:bg-slate-800 transition-all active:scale-95 shadow-xl shadow-slate-200 mt-4"
+                  >
+                    {t.save}
+                  </button>
+                </form>
+              </motion.div>
+            </div>
+          )}
+        </AnimatePresence>
       </main>
     </div>
   );

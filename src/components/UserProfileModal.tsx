@@ -9,7 +9,8 @@ import {
   Check,
   Zap,
   RefreshCw,
-  Upload
+  Upload,
+  Trash2
 } from 'lucide-react';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useAuth } from '../contexts/AuthContext';
@@ -32,7 +33,6 @@ export function UserProfileModal({ isOpen, onClose }: UserProfileModalProps) {
   const [username, setUsername] = useState('');
   const [avatarUrl, setAvatarUrl] = useState('');
   
-  // Referência para acionar o input de arquivo oculto
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -49,7 +49,7 @@ export function UserProfileModal({ isOpen, onClose }: UserProfileModalProps) {
       const { data, error } = await supabase.auth.updateUser({
         data: { 
           username,
-          avatar_url: avatarUrl
+          avatar_url: avatarUrl // Se estiver vazio, ele salvará sem foto
         }
       });
       
@@ -73,18 +73,12 @@ export function UserProfileModal({ isOpen, onClose }: UserProfileModalProps) {
     }
   };
 
-  // Função reescrita: Gera um avatar estilizado baseado no nome do usuário
   const generateAIAvatar = async () => {
     setAiLoading(true);
     try {
-      // Simula um tempo de "geração" para feedback visual
       await new Promise(resolve => setTimeout(resolve, 800));
-      
-      // Usa um serviço de avatares divertido e gratuito (Dicebear) usando o nome do usuário ou um valor aleatório
       const seed = username || user?.email || Math.random().toString();
-      // Usando o estilo 'bottts' (robôs) ou 'adventurer'
       const newAvatar = `https://api.dicebear.com/7.x/adventurer-neutral/svg?seed=${encodeURIComponent(seed)}&backgroundColor=f1f5f9`;
-      
       setAvatarUrl(newAvatar);
     } catch (err: any) {
       console.error('AI Avatar Error:', err.message);
@@ -93,38 +87,40 @@ export function UserProfileModal({ isOpen, onClose }: UserProfileModalProps) {
     }
   };
 
-  // Nova Função: Lida com o upload do arquivo para o Supabase Storage
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file || !user) return;
 
     setUploadLoading(true);
     try {
-      // 1. Cria um nome único para o arquivo
       const fileExt = file.name.split('.').pop();
       const fileName = `${user.id}-${Math.random()}.${fileExt}`;
       const filePath = `${fileName}`;
 
-      // 2. Faz o upload para o bucket 'avatars' no Supabase
       const { error: uploadError } = await supabase.storage
-        .from('avatars') // ATENÇÃO: Você precisa ter um bucket chamado 'avatars' no Supabase
+        .from('avatars')
         .upload(filePath, file);
 
       if (uploadError) throw uploadError;
 
-      // 3. Pega a URL pública da imagem recém-enviada
       const { data } = supabase.storage
         .from('avatars')
         .getPublicUrl(filePath);
 
-      // 4. Atualiza o estado da imagem na tela
-      setAvatarUrl(data.publicUrl);
+      // MÁGICA DO CACHE: Adicionamos um ?t=numeros no final para forçar o navegador a baixar a imagem nova e não mostrar a corrompida!
+      setAvatarUrl(`${data.publicUrl}?t=${new Date().getTime()}`);
     } catch (error: any) {
       console.error('Erro no upload de imagem:', error.message);
-      alert('Erro ao enviar imagem. Verifique se o bucket "avatars" existe no Supabase.');
+      alert('Erro ao enviar imagem. Verifique as configurações do Storage.');
     } finally {
       setUploadLoading(false);
     }
+  };
+
+  // Nova função para remover a foto atual
+  const handleRemovePhoto = () => {
+    setAvatarUrl('');
+    // A foto só será definitivamente "removida" do perfil quando o usuário clicar em "Salvar"
   };
 
   return (
@@ -155,7 +151,7 @@ export function UserProfileModal({ isOpen, onClose }: UserProfileModalProps) {
                {/* Avatar Section */}
                <div className="flex flex-col items-center gap-4">
                   <div className="relative group">
-                    <div className="size-32 rounded-[2.5rem] bg-white p-2 shadow-xl ring-4 ring-primary-50">
+                    <div className="size-32 rounded-[2.5rem] bg-white p-2 shadow-xl ring-4 ring-primary-50 relative">
                        <div className="w-full h-full rounded-[2.1rem] overflow-hidden bg-slate-100 flex items-center justify-center border border-slate-100 relative">
                           {avatarUrl ? (
                             <img src={avatarUrl} alt="Profile" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
@@ -163,7 +159,6 @@ export function UserProfileModal({ isOpen, onClose }: UserProfileModalProps) {
                             <UserIcon className="size-12 text-slate-300" />
                           )}
                           
-                          {/* Overlay de carregamento para upload */}
                           {uploadLoading && (
                             <div className="absolute inset-0 bg-white/70 flex items-center justify-center backdrop-blur-sm">
                                <RefreshCw className="size-6 text-primary-500 animate-spin" />
@@ -172,26 +167,38 @@ export function UserProfileModal({ isOpen, onClose }: UserProfileModalProps) {
                        </div>
                     </div>
                     
-                    {/* Botão de gerar avatar IA movido ligeiramente para a direita */}
+                    {/* Botão de gerar avatar IA */}
                     <button 
                       onClick={generateAIAvatar}
                       disabled={aiLoading || uploadLoading}
                       title="Gerar Avatar Automático"
-                      className="absolute -bottom-2 -right-4 p-3 bg-slate-900 text-white rounded-2xl shadow-lg hover:scale-110 active:scale-95 transition-all group disabled:opacity-50"
+                      className="absolute -bottom-2 -right-4 p-3 bg-slate-900 text-white rounded-2xl shadow-lg hover:scale-110 active:scale-95 transition-all disabled:opacity-50"
                     >
-                      {aiLoading ? <RefreshCw className="size-4 animate-spin" /> : <Sparkles className="size-4 group-hover:rotate-12 transition-all" />}
+                      {aiLoading ? <RefreshCw className="size-4 animate-spin" /> : <Sparkles className="size-4" />}
                     </button>
 
-                    {/* Novo Botão: Fazer upload de foto */}
+                    {/* Botão de Upload */}
                     <button 
                       onClick={() => fileInputRef.current?.click()}
                       disabled={uploadLoading || aiLoading}
                       title="Carregar minha foto"
-                      className="absolute -bottom-2 -left-4 p-3 bg-primary-500 text-white rounded-2xl shadow-lg hover:scale-110 active:scale-95 transition-all disabled:opacity-50"
+                      className="absolute top-0 -right-4 p-3 bg-primary-500 text-white rounded-2xl shadow-lg hover:scale-110 active:scale-95 transition-all disabled:opacity-50"
                     >
                       <Upload className="size-4" />
                     </button>
-                    {/* Input de arquivo invisível */}
+
+                    {/* Botão de Remover (Aparece apenas se tiver uma foto) */}
+                    {avatarUrl && (
+                      <button 
+                        onClick={handleRemovePhoto}
+                        disabled={uploadLoading || aiLoading}
+                        title="Remover foto"
+                        className="absolute top-0 -left-4 p-3 bg-red-500 text-white rounded-2xl shadow-lg hover:scale-110 active:scale-95 transition-all disabled:opacity-50"
+                      >
+                        <Trash2 className="size-4" />
+                      </button>
+                    )}
+
                     <input 
                       type="file" 
                       ref={fileInputRef} 
@@ -225,7 +232,6 @@ export function UserProfileModal({ isOpen, onClose }: UserProfileModalProps) {
                     </div>
 
                     <div className="space-y-2">
-                       {/* O botão "Gerar por IA" grande foi mantido, mas você agora tem a opção da câmera também */}
                        <button 
                         onClick={() => fileInputRef.current?.click()}
                         disabled={uploadLoading}
