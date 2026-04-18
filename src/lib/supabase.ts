@@ -1,7 +1,8 @@
 import { createClient as createSupabaseClient } from '../utils/supabase/client';
 
-const supabaseUrl = process.env.VITE_SUPABASE_URL || '';
-const supabaseAnonKey = process.env.VITE_SUPABASE_ANON_KEY || '';
+// Usamos import.meta.env porque este é um projeto Vite
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';
+const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
 
 // Function to check if the URL is valid
 const isValidUrl = (url: string) => {
