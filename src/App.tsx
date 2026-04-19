@@ -6,6 +6,8 @@ import { Payments } from './pages/Payments';
 import { Financial } from './pages/Financial';
 import { Analytics } from './pages/Analytics';
 import { Settings } from './pages/Settings';
+import { Calendar } from './pages/Calendar';
+import { Support } from './pages/Support';
 import { Login } from './pages/Login';
 import { Signup } from './pages/Signup';
 import { ProtectedRoute } from './components/ProtectedRoute';
@@ -63,10 +65,26 @@ export default function App() {
           } 
         />
         <Route 
+          path="/calendar" 
+          element={
+            <ProtectedRoute>
+              <Calendar />
+            </ProtectedRoute>
+          } 
+        />
+        <Route 
           path="/settings" 
           element={
             <ProtectedRoute>
               <Settings />
+            </ProtectedRoute>
+          } 
+        />
+        <Route 
+          path="/support" 
+          element={
+            <ProtectedRoute>
+              <Support />
             </ProtectedRoute>
           } 
         />

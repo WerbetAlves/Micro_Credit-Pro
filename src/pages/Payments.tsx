@@ -38,14 +38,20 @@ export function Payments() {
   const [selectedWalletId, setSelectedWalletId] = useState<string>('');
   const [wallets, setWallets] = useState<{id: string, name: string}[]>([]);
   const [installmentToPay, setInstallmentToPay] = useState<string | null>(null);
+  const [paidAmount, setPaidAmount] = useState<number>(0);
   const [formLoading, setFormLoading] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
 
-  const [formData, setFormData] = useState({
+  const [formData, setFormData] = useState<{
+    loan_id: string;
+    due_date: string;
+    amount: number;
+    status: 'upcoming' | 'paid' | 'late' | 'missed';
+  }>({
     loan_id: '',
     due_date: new Date().toISOString().split('T')[0],
     amount: 0,
-    status: 'upcoming' as const
+    status: 'upcoming'
   });
 
   useEffect(() => {
@@ -82,7 +88,7 @@ export function Payments() {
         .from('installments')
         .select(`
           *,
-          loans (
+          loans!inner (
             id,
             user_id,
             clients (
@@ -90,14 +96,12 @@ export function Payments() {
             )
           )
         `)
+        .eq('loans.user_id', user.id)
         .order('due_date', { ascending: true });
 
       if (error) throw error;
       
-      // Filter by current user in memory since we need to join deeply 
-      // (Supabase RLS handles this but for robustness we filter or adjust query)
-      const userInstallments = (data || []).filter((inst: any) => inst.loans?.user_id === user.id);
-      setInstallments(userInstallments);
+      setInstallments(data || []);
     } catch (err: any) {
       console.error('Error fetching installments:', err.message);
     } finally {
@@ -106,8 +110,12 @@ export function Payments() {
   }
 
   const handleMarkAsPaid = async (id: string) => {
-    setInstallmentToPay(id);
-    setIsWalletModalOpen(true);
+    const inst = installments.find(i => i.id === id);
+    if (inst) {
+      setPaidAmount(inst.amount);
+      setInstallmentToPay(id);
+      setIsWalletModalOpen(true);
+    }
   };
 
   const confirmPayment = async () => {
@@ -118,38 +126,49 @@ export function Payments() {
       // Find installment
       const { data: inst } = await supabase
         .from('installments')
-        .select('amount, lonals:loans(id, client_id)')
+        .select('amount, loans(id, client_id, clients(full_name))')
         .eq('id', installmentToPay)
         .single();
       
-      const { error } = await supabase
-        .from('installments')
-        .update({ status: 'paid' })
-        .eq('id', installmentToPay);
+      if (!inst) throw new Error("Installment not found");
+
+      const isPartial = paidAmount < inst.amount;
+      const remaining = inst.amount - paidAmount;
+
+      if (isPartial) {
+        // Reduz o valor da parcela atual mas mantém o status se ainda houver saldo
+        // Se o valor for reduzido a zero, vira 'paid'
+        await supabase
+          .from('installments')
+          .update({ 
+            amount: remaining,
+            status: remaining <= 0 ? 'paid' : inst.status 
+          })
+          .eq('id', installmentToPay);
+      } else {
+        await supabase
+          .from('installments')
+          .update({ status: 'paid' })
+          .eq('id', installmentToPay);
+      }
       
-      if (error) throw error;
+      const loan: any = inst.loans;
+      await supabase.from('transactions').insert({
+        user_id: user.id,
+        client_id: loan?.client_id,
+        wallet_id: selectedWalletId === 'default' ? null : selectedWalletId,
+        type: 'income',
+        category: 'payment_received',
+        amount: paidAmount,
+        description: `${isPartial ? t.partialPayment : t.fullPayment} - ${loan?.clients?.full_name || ''}`
+      });
 
-      if (inst) {
-        const loan: any = inst.lonals;
-        await supabase.from('transactions').insert({
-          user_id: user.id,
-          client_id: loan?.client_id,
-          loan_id: loan?.id,
-          installment_id: installmentToPay,
-          wallet_id: selectedWalletId === 'default' ? null : selectedWalletId,
-          type: 'income',
-          category: 'payment_received',
-          amount: inst.amount,
-          description: `Recebimento de parcela: ${installmentToPay.split('-')[0]}`
-        });
-
-        // Update Wallet Balance
-        if (selectedWalletId && selectedWalletId !== 'default') {
-           const { data: currWallet } = await supabase.from('wallets').select('balance').eq('id', selectedWalletId).single();
-           if (currWallet) {
-             await supabase.from('wallets').update({ balance: Number(currWallet.balance) + Number(inst.amount) }).eq('id', selectedWalletId);
-           }
-        }
+      // Update Wallet Balance
+      if (selectedWalletId && selectedWalletId !== 'default') {
+         const { data: currWallet } = await supabase.from('wallets').select('balance').eq('id', selectedWalletId).single();
+         if (currWallet) {
+           await supabase.from('wallets').update({ balance: Number(currWallet.balance) + Number(paidAmount) }).eq('id', selectedWalletId);
+         }
       }
 
       setIsWalletModalOpen(false);
@@ -524,24 +543,42 @@ export function Payments() {
               className="relative w-full max-w-sm bg-white rounded-[2rem] p-8 shadow-2xl"
             >
               <h3 className="text-lg font-black text-slate-900 mb-6">{t.selectWallet}</h3>
-              <div className="space-y-3 mb-8">
-                {wallets.map(w => (
-                  <button
-                    key={w.id}
-                    onClick={() => setSelectedWalletId(w.id)}
-                    className={cn(
-                      "w-full p-4 rounded-2xl flex items-center justify-between border-2 transition-all",
-                      selectedWalletId === w.id ? "bg-emerald-50 border-emerald-500 text-emerald-600" : "bg-slate-50 border-transparent text-slate-500"
-                    )}
-                  >
-                    <div className="flex items-center gap-3 font-bold text-sm">
-                      <Wallet className="size-4" />
-                      {w.name}
-                    </div>
-                    {selectedWalletId === w.id && <CheckCircle2 className="size-4" />}
-                  </button>
-                ))}
+              
+              <div className="space-y-4 mb-6">
+                <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                  <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400 block mb-2">{t.receivedAmount}</label>
+                  <input 
+                    type="number" 
+                    value={paidAmount || ''} 
+                    onFocus={e => e.target.select()}
+                    onChange={e => setPaidAmount(Number(e.target.value))}
+                    className="w-full bg-transparent border-none outline-none text-lg font-black text-slate-900" 
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400 ml-1">{t.wallets}</label>
+                  <div className="space-y-2">
+                    {wallets.map(w => (
+                      <button
+                        key={w.id}
+                        onClick={() => setSelectedWalletId(w.id)}
+                        className={cn(
+                          "w-full p-4 rounded-2xl flex items-center justify-between border-2 transition-all",
+                          selectedWalletId === w.id ? "bg-emerald-50 border-emerald-500 text-emerald-600" : "bg-white border-slate-100 text-slate-500 hove:border-slate-200"
+                        )}
+                      >
+                        <div className="flex items-center gap-3 font-bold text-sm">
+                          <Wallet className="size-4" />
+                          {w.name}
+                        </div>
+                        {selectedWalletId === w.id && <CheckCircle2 className="size-4" />}
+                      </button>
+                    ))}
+                  </div>
+                </div>
               </div>
+
               <div className="flex gap-3">
                  <button onClick={() => setIsWalletModalOpen(false)} className="flex-1 py-3 text-xs font-bold uppercase text-slate-400">{t.cancel}</button>
                  <button 

@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { Calculator, DollarSign, Calendar, Percent, User, CheckCircle2 } from 'lucide-react';
+import { Calculator, DollarSign, Calendar, Percent, User, CheckCircle2, Wallet, Shield } from 'lucide-react';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../lib/supabase';
 import { motion, AnimatePresence } from 'motion/react';
+import { generateLoanContract } from '../services/contractService';
 
 export function LoanSimulator() {
   const { formatCurrency } = useLanguage();
@@ -11,18 +12,40 @@ export function LoanSimulator() {
   
   const [amount, setAmount] = useState('5000');
   const [rate, setRate] = useState('5');
-  const [months, setMonths] = useState('12');
+  const [duration, setDuration] = useState('12');
   const [interestType, setInterestType] = useState<'monthly' | 'annual'>('monthly');
+  const [paymentFrequency, setPaymentFrequency] = useState<'monthly' | 'daily'>('monthly');
   
   // Novos estados para vinculação com o banco de dados
   const [clients, setClients] = useState<any[]>([]);
   const [selectedClientId, setSelectedClientId] = useState('');
+  const [selectedWalletId, setSelectedWalletId] = useState('');
+  const [wallets, setWallets] = useState<any[]>([]);
   const [isSaving, setIsSaving] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
 
+  // Estados para Garantia
+  const [hasGuarantee, setHasGuarantee] = useState(false);
+  const [guaranteeType, setGuaranteeType] = useState('celular');
+  const [guaranteeDescription, setGuaranteeDescription] = useState('');
+
   useEffect(() => {
-    if (user) fetchClients();
+    if (user) {
+      fetchClients();
+      fetchWallets();
+    }
   }, [user]);
+
+  async function fetchWallets() {
+    const { data } = await supabase
+      .from('wallets')
+      .select('id, name')
+      .eq('user_id', user?.id);
+    if (data) {
+      setWallets(data);
+      if (data.length > 0) setSelectedWalletId(data[0].id);
+    }
+  }
 
   async function fetchClients() {
     const { data } = await supabase
@@ -35,13 +58,26 @@ export function LoanSimulator() {
 
   const numAmount = parseFloat(amount) || 0;
   const numRate = parseFloat(rate) || 0;
-  const numMonths = parseInt(months) || 1;
+  const numDuration = parseInt(duration) || 1;
 
   // Cálculo Básico
-  let monthlyRate = interestType === 'monthly' ? numRate / 100 : (numRate / 12) / 100;
-  let totalInterest = numAmount * monthlyRate * numMonths;
-  let totalAmount = numAmount + totalInterest;
-  let monthlyInstallment = totalAmount / numMonths;
+  // Se for mensal, numDuration são meses. Se for diário, numDuration são dias.
+  let totalInterest = 0;
+  let totalAmount = 0;
+  let installmentValue = 0;
+
+  if (paymentFrequency === 'monthly') {
+    let monthlyRate = interestType === 'monthly' ? numRate / 100 : (numRate / 12) / 100;
+    totalInterest = numAmount * monthlyRate * numDuration;
+    totalAmount = numAmount + totalInterest;
+    installmentValue = totalAmount / numDuration;
+  } else {
+    // Para diário, vamos simplificar: a taxa informada é considerada mensal e dividida por 30
+    let dailyRate = (interestType === 'monthly' ? numRate : numRate / 12) / 30 / 100;
+    totalInterest = numAmount * dailyRate * numDuration;
+    totalAmount = numAmount + totalInterest;
+    installmentValue = totalAmount / numDuration;
+  }
 
   // A função que MÁGICA: Salva no banco de dados
   const handleSaveLoan = async () => {
@@ -52,30 +88,53 @@ export function LoanSimulator() {
     
     setIsSaving(true);
     try {
-      // 1. Grava o contrato de empréstimo
+      // 0. Busca dados para o contrato
+      const { data: profile } = await supabase.from('profiles').select('*').single();
+      const { data: client } = await supabase.from('clients').select('*').eq('id', selectedClientId).single();
+
+      // 1. Grava o contrato de empréstimo (com campos para contrato)
       const { data: loan, error: loanError } = await supabase.from('loans').insert([{
         user_id: user.id,
         client_id: selectedClientId,
         principal_amount: numAmount,
         interest_rate: numRate,
         interest_type: interestType,
-        term_months: numMonths,
-        monthly_installment: monthlyInstallment,
+        payment_frequency: paymentFrequency,
+        term_months: paymentFrequency === 'monthly' ? numDuration : Math.ceil(numDuration / 30),
+        term_days: paymentFrequency === 'daily' ? numDuration : numDuration * 30,
+        monthly_installment: installmentValue,
         total_repayment: totalAmount,
-        status: 'active'
+        status: 'active',
+        guarantee_info: hasGuarantee ? {
+          type: guaranteeType,
+          description: guaranteeDescription
+        } : null,
+        legal_validation_status: 'not_validated',
+        sent_to_client: true, // Simula o envio automático
+        contract_content: await generateLoanContract(
+          { principal_amount: numAmount, interest_rate: numRate, interest_type: interestType, term_months: numDuration, monthly_installment: installmentValue, total_repayment: totalAmount, guarantee_info: hasGuarantee ? { type: guaranteeType, description: guaranteeDescription } : null },
+          client,
+          profile
+        )
       }]).select().single();
 
       if (loanError) throw loanError;
 
-      // 2. Cria todas as parcelas mensais baseadas no prazo
+      // 2. Cria todas as parcelas baseadas na frequência
       const installments = [];
       let currentDate = new Date();
       
-      for (let i = 1; i <= numMonths; i++) {
-        const dueDate = new Date(currentDate.setMonth(currentDate.getMonth() + 1));
+      for (let i = 1; i <= numDuration; i++) {
+        let dueDate;
+        if (paymentFrequency === 'monthly') {
+          dueDate = new Date(currentDate.setMonth(currentDate.getMonth() + 1));
+        } else {
+          dueDate = new Date(currentDate.setDate(currentDate.getDate() + 1));
+        }
+
         installments.push({
           loan_id: loan.id,
-          amount: monthlyInstallment,
+          amount: installmentValue,
           due_date: dueDate.toISOString().split('T')[0],
           status: 'upcoming'
         });
@@ -89,11 +148,20 @@ export function LoanSimulator() {
         user_id: user.id,
         client_id: selectedClientId,
         loan_id: loan.id,
+        wallet_id: selectedWalletId || null,
         type: 'expense',
         category: 'loan_disbursement',
         amount: numAmount,
-        description: `Empréstimo Liberado`
+        description: `Empréstimo Liberado (${paymentFrequency === 'daily' ? 'Diário' : 'Mensal'})`
       }]);
+
+      // 4. Atualiza o saldo da carteira
+      if (selectedWalletId) {
+        const { data: currentWallet } = await supabase.from('wallets').select('balance').eq('id', selectedWalletId).single();
+        if (currentWallet) {
+          await supabase.from('wallets').update({ balance: Number(currentWallet.balance) - numAmount }).eq('id', selectedWalletId);
+        }
+      }
 
       // Feedback visual de sucesso!
       setShowSuccess(true);
@@ -116,7 +184,13 @@ export function LoanSimulator() {
             <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-4">Valor Principal (R$)</label>
             <div className="relative">
               <DollarSign className="absolute left-5 top-1/2 -translate-y-1/2 size-4 text-slate-300" />
-              <input type="number" value={amount} onChange={(e) => setAmount(e.target.value)} className="w-full bg-slate-50 border-none rounded-2xl pl-12 pr-6 py-4 text-sm font-bold focus:ring-2 focus:ring-emerald-100 outline-none" />
+              <input 
+                type="number" 
+                value={amount || ''} 
+                onFocus={(e) => e.target.select()}
+                onChange={(e) => setAmount(e.target.value)} 
+                className="w-full bg-slate-50 border-none rounded-2xl pl-12 pr-6 py-4 text-sm font-bold focus:ring-2 focus:ring-emerald-100 outline-none" 
+              />
             </div>
           </div>
 
@@ -125,12 +199,18 @@ export function LoanSimulator() {
               <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-4">Taxa (%)</label>
               <div className="relative">
                 <Percent className="absolute left-5 top-1/2 -translate-y-1/2 size-4 text-slate-300" />
-                <input type="number" value={rate} onChange={(e) => setRate(e.target.value)} className="w-full bg-slate-50 border-none rounded-2xl pl-12 pr-6 py-4 text-sm font-bold focus:ring-2 focus:ring-emerald-100 outline-none" />
+                <input 
+                  type="number" 
+                  value={rate || ''} 
+                  onFocus={(e) => e.target.select()}
+                  onChange={(e) => setRate(e.target.value)} 
+                  className="w-full bg-slate-50 border-none rounded-2xl pl-12 pr-6 py-4 text-sm font-bold focus:ring-2 focus:ring-emerald-100 outline-none" 
+                />
               </div>
             </div>
             
             <div className="space-y-2">
-              <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-4">Período</label>
+              <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-4">Tipo Juros</label>
               <select value={interestType} onChange={(e: any) => setInterestType(e.target.value)} className="w-full bg-slate-50 border-none rounded-2xl px-6 py-4 text-sm font-bold focus:ring-2 focus:ring-emerald-100 outline-none appearance-none">
                 <option value="monthly">Ao Mês</option>
                 <option value="annual">Ao Ano</option>
@@ -138,13 +218,89 @@ export function LoanSimulator() {
             </div>
           </div>
 
-          <div className="space-y-2">
-            <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-4">Prazo (Meses)</label>
-            <div className="relative">
-              <Calendar className="absolute left-5 top-1/2 -translate-y-1/2 size-4 text-slate-300" />
-              <input type="number" value={months} onChange={(e) => setMonths(e.target.value)} className="w-full bg-slate-50 border-none rounded-2xl pl-12 pr-6 py-4 text-sm font-bold focus:ring-2 focus:ring-emerald-100 outline-none" />
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-4">Freq. Pagamento</label>
+              <select value={paymentFrequency} onChange={(e: any) => setPaymentFrequency(e.target.value)} className="w-full bg-slate-50 border-none rounded-2xl px-6 py-4 text-sm font-bold focus:ring-2 focus:ring-emerald-100 outline-none appearance-none">
+                <option value="monthly">Mensal</option>
+                <option value="daily">Diário</option>
+              </select>
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-4">Prazo ({paymentFrequency === 'monthly' ? 'Meses' : 'Dias'})</label>
+              <div className="relative">
+                <Calendar className="absolute left-5 top-1/2 -translate-y-1/2 size-4 text-slate-300" />
+                <input 
+                  type="number" 
+                  value={duration || ''} 
+                  onFocus={(e) => e.target.select()}
+                  onChange={(e) => setDuration(e.target.value)} 
+                  className="w-full bg-slate-50 border-none rounded-2xl pl-12 pr-6 py-4 text-sm font-bold focus:ring-2 focus:ring-emerald-100 outline-none" 
+                />
+              </div>
             </div>
           </div>
+ 
+           {/* Seção de Garantias (Opcional) */}
+           <div className="pt-6 border-t border-slate-100 space-y-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Shield className="size-4 text-emerald-500" />
+                  <span className="text-xs font-black uppercase tracking-widest text-slate-700">Garantia Colateral</span>
+                </div>
+                <label className="relative inline-flex items-center cursor-pointer">
+                  <input 
+                    type="checkbox" 
+                    checked={hasGuarantee} 
+                    onChange={(e) => setHasGuarantee(e.target.checked)} 
+                    className="sr-only peer" 
+                  />
+                  <div className="w-9 h-5 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-emerald-500"></div>
+                </label>
+              </div>
+
+              <AnimatePresence>
+                {hasGuarantee && (
+                  <motion.div 
+                    initial={{ height: 0, opacity: 0 }}
+                    animate={{ height: 'auto', opacity: 1 }}
+                    exit={{ height: 0, opacity: 0 }}
+                    className="overflow-hidden space-y-4 pt-2"
+                  >
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-4">Tipo</label>
+                        <select 
+                          value={guaranteeType} 
+                          onChange={(e) => setGuaranteeType(e.target.value)} 
+                          className="w-full bg-slate-50 border-none rounded-2xl px-6 py-4 text-sm font-bold focus:ring-2 focus:ring-emerald-100 outline-none appearance-none"
+                        >
+                          <option value="celular">Celular / Smartphone</option>
+                          <option value="eletronico">TV / Eletrônico</option>
+                          <option value="veiculo">Carro / Moto</option>
+                          <option value="imovel">Imóvel</option>
+                          <option value="outro">Outro Bem</option>
+                        </select>
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-4">Modelo / Descrição</label>
+                        <input 
+                          type="text" 
+                          placeholder="Ex: iPhone 13 Pro" 
+                          value={guaranteeDescription}
+                          onChange={(e) => setGuaranteeDescription(e.target.value)}
+                          className="w-full bg-slate-50 border-none rounded-2xl px-6 py-4 text-sm font-bold focus:ring-2 focus:ring-emerald-100 outline-none" 
+                        />
+                      </div>
+                    </div>
+                    <p className="text-[10px] text-slate-400 font-medium italic ml-4">
+                      * A garantia será registrada no contrato deste empréstimo.
+                    </p>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+           </div>
         </div>
       </div>
 
@@ -153,8 +309,8 @@ export function LoanSimulator() {
         
         <div className="relative z-10 space-y-8">
           <div>
-             <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-2">Parcela Mensal</p>
-             <h2 className="text-4xl lg:text-5xl font-black text-emerald-400">{formatCurrency(monthlyInstallment)}</h2>
+             <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-2">Parcela {paymentFrequency === 'monthly' ? 'Mensal' : 'Diária'}</p>
+             <h2 className="text-4xl lg:text-5xl font-black text-emerald-400">{formatCurrency(installmentValue)}</h2>
           </div>
 
           <div className="space-y-4 pt-6 border-t border-slate-800">
@@ -186,6 +342,26 @@ export function LoanSimulator() {
                   ))}
                 </select>
               </div>
+           </div>
+
+           <div className="space-y-2">
+              <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-4">Origem do Capital (Carteira)</label>
+              <div className="relative">
+                <Wallet className="absolute left-4 top-1/2 -translate-y-1/2 size-4 text-slate-400" />
+                <select 
+                  value={selectedWalletId} 
+                  onChange={(e) => setSelectedWalletId(e.target.value)} 
+                  className="w-full bg-slate-800/50 border border-slate-700 rounded-2xl pl-10 pr-6 py-3 text-sm font-bold focus:ring-2 focus:ring-emerald-500 outline-none appearance-none text-white"
+                >
+                  <option value="">Selecione uma carteira...</option>
+                  {wallets.map(w => (
+                    <option key={w.id} value={w.id}>{w.name}</option>
+                  ))}
+                </select>
+              </div>
+              {wallets.length === 0 && (
+                <p className="text-[8px] text-rose-400 font-bold ml-4 uppercase">Nenhuma carteira encontrada. Crie uma na aba Financeiro.</p>
+              )}
            </div>
 
            <button 

@@ -149,7 +149,7 @@ export function UpcomingCollections() {
                       rel="noreferrer"
                       className="inline-flex items-center gap-2 bg-emerald-500 hover:bg-emerald-600 text-white px-5 py-2.5 rounded-xl text-[10px] font-bold transition-all shadow-md shadow-emerald-100 active:scale-95 uppercase tracking-wider"
                     >
-                      <MessageSquare title={t.whatsapp} className="size-3" />
+                      <MessageSquare className="size-3" />
                       {t.whatsapp}
                     </a>
                   </td>

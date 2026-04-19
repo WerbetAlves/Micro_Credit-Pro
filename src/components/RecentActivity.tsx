@@ -32,7 +32,7 @@ export function RecentActivity() {
       // Fetch latest loans
       const { data: latestLoans } = await supabase
         .from('loans')
-        .select('id, principal_amount, created_at, clients(full_name)')
+        .select('id, principal_amount, created_at, guarantee_info, clients(full_name)')
         .eq('user_id', user.id)
         .order('created_at', { ascending: false })
         .limit(2);
@@ -49,11 +49,12 @@ export function RecentActivity() {
       const combined: Activity[] = [];
 
       (latestLoans || []).forEach((l: any) => {
+        const guaranteeText = l.guarantee_info ? ` (+ Garantia: ${l.guarantee_info.type})` : '';
         combined.push({
           id: l.id,
           type: 'loan',
           title: t.newLoanApproved,
-          subtitle: `${formatCurrency(l.principal_amount)} for ${l.clients?.full_name}`,
+          subtitle: `${formatCurrency(l.principal_amount)} for ${l.clients?.full_name}${guaranteeText}`,
           time: new Date(l.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
           icon: PlusSquare,
           color: 'text-blue-500',

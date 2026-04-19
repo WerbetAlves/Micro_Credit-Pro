@@ -11,6 +11,7 @@ import {
   Zap
 } from 'lucide-react';
 import { useLanguage } from '../contexts/LanguageContext';
+import { useAuth } from '../contexts/AuthContext';
 import { GoogleGenAI } from "@google/genai";
 import { cn } from '../lib/utils';
 import { supabase } from '../lib/supabase';
@@ -22,6 +23,7 @@ interface Message {
 
 export function AIAssistantDashboard() {
   const { t } = useLanguage();
+  const { user } = useAuth();
   const [isOpen, setIsOpen] = useState(false);
   const [messages, setMessages] = useState<Message[]>([
     { role: 'assistant', content: t.aiWelcome }
@@ -86,6 +88,20 @@ export function AIAssistantDashboard() {
                 },
                 required: ["walletName", "newBalance"]
               }
+            },
+            {
+              name: "create_support_ticket",
+              parameters: {
+                type: "OBJECT",
+                description: "Creates a support ticket for technical help or specialized assistance.",
+                properties: {
+                  subject: { type: "STRING", description: "The subject of the support ticket." },
+                  description: { type: "STRING", description: "Detailed description of the issue." },
+                  priority: { type: "STRING", description: "Priority level: low, medium, high." },
+                  category: { type: "STRING", description: "Category: technical, billing, feature, other." }
+                },
+                required: ["subject", "description"]
+              }
             }
           ]
         }
@@ -109,7 +125,8 @@ export function AIAssistantDashboard() {
         
         Sua missão é:
         1. Analisar dados e dar conselhos estratégicos sobre inadimplência e capital.
-        2. EXECUTAR AÇÕES (bloquear clientes, atualizar status ou JUSTAR SALDOS) se o usuário pedir.
+        2. EXECUTAR AÇÕES (bloquear clientes, atualizar status ou AJUSTAR SALDOS) se o usuário pedir.
+        3. Prestar SUPORTE ao usuário sobre o uso do SaaS Emerald. Se a dúvida for técnica ou complexa demais para você resolver sozinho, ofereça e use a ferramenta 'create_support_ticket' para registrar um chamado para a equipe humana.
         
         Contexto do negócio:
         - Total de empréstimos: ${statsContext.totalLoans}
@@ -224,6 +241,23 @@ export function AIAssistantDashboard() {
           }
         }
 
+        if (call.name === 'create_support_ticket') {
+          const { subject, description, priority, category } = call.args as any;
+          
+          const { error } = await supabase.from('support_tickets').insert([{
+            user_id: user.id,
+            subject,
+            description,
+            priority: priority || 'medium',
+            category: category || 'technical',
+            status: 'open'
+          }]);
+
+          executionResult = error 
+            ? `Erro ao criar ticket: ${error.message}` 
+            : `Ticket de suporte "${subject}" criado com sucesso. Nossa equipe técnica entrará em contato em breve.`;
+        }
+
         // Get final response after execution
         const finalResponse = await ai.models.generateContent({
           model: "gemini-3-flash-preview",
@@ -265,6 +299,7 @@ export function AIAssistantDashboard() {
           </p>
           <button 
             onClick={() => setIsOpen(true)}
+            data-assistant-trigger
             className="flex items-center gap-2 bg-emerald-500 text-white px-6 py-3 rounded-2xl font-bold text-xs uppercase tracking-widest hover:bg-emerald-600 transition-all active:scale-95 shadow-lg shadow-emerald-500/20"
           >
             <MessageSquareText className="size-4" />

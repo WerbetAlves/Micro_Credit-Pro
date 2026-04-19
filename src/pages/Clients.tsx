@@ -27,6 +27,7 @@ export function Clients() {
   const [clients, setClients] = useState<Client[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
+  const [profile, setProfile] = useState<any>(null);
   
   // Modal states
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -35,19 +36,34 @@ export function Clients() {
   const [formError, setFormError] = useState<string | null>(null);
 
   // Form states
-  const [formData, setFormData] = useState({
+  const [formData, setFormData] = useState<{
+    full_name: string;
+    email: string;
+    phone: string;
+    document_id: string;
+    address: string;
+    credit_score: number;
+    status: 'active' | 'inactive' | 'blocked';
+  }>({
     full_name: '',
     email: '',
     phone: '',
     document_id: '',
     address: '',
     credit_score: 500,
-    status: 'active' as const
+    status: 'active'
   });
 
   useEffect(() => {
     fetchClients();
+    fetchProfile();
   }, [user]);
+
+  async function fetchProfile() {
+    if (!user) return;
+    const { data } = await supabase.from('profiles').select('*').single();
+    if (data) setProfile(data);
+  }
 
   async function fetchClients() {
     if (!user) return;
@@ -56,6 +72,7 @@ export function Clients() {
       const { data, error } = await supabase
         .from('clients')
         .select('*')
+        .eq('user_id', user.id)
         .order('created_at', { ascending: false });
 
       if (error) throw error;
@@ -80,6 +97,12 @@ export function Clients() {
         status: client.status
       });
     } else {
+      // Bloqueio de Plano Grátis
+      if ((profile?.plan_type || 'free') === 'free' && clients.length >= 3) {
+        alert("Limite de 3 clientes atingido no Plano Gratuito. Faça upgrade para adicionar clientes ilimitados!");
+        return;
+      }
+
       setEditingClient(null);
       setFormData({
         full_name: '',

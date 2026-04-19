@@ -1,5 +1,19 @@
 import React, { useState } from 'react';
-import {LayoutDashboard, Landmark, Wallet, BarChart3, Settings, LogOut, Globe, X, Users, PieChart} from 'lucide-react';
+import { 
+  LayoutDashboard, 
+  Landmark, 
+  Wallet, 
+  BarChart3, 
+  Settings, 
+  LogOut, 
+  Globe, 
+  X, 
+  Users, 
+  PieChart, 
+  CreditCard, 
+  Calendar,
+  MessageSquareText
+} from 'lucide-react';
 import {cn} from '@/src/lib/utils';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useAuth } from '../contexts/AuthContext';
@@ -25,9 +39,12 @@ export function Sidebar({className, isOpen, onClose}: SidebarProps) {
     {name: t.overview, icon: LayoutDashboard, path: '/'},
     {name: t.clients, icon: Users, path: '/clients'},
     {name: t.loans, icon: Landmark, path: '/loans'},
+    {name: t.calendar, icon: Calendar, path: '/calendar'},
     {name: t.payments, icon: Wallet, path: '/payments'},
+    {name: t.adminSupport, icon: MessageSquareText, path: '/support'},
     {name: t.financial, icon: BarChart3, path: '/financial'},
     {name: t.analytics, icon: PieChart, path: '/analytics'},
+    {name: 'Planos & Assinatura', icon: CreditCard, path: '/settings'},
     {name: t.settings, icon: Settings, path: '/settings'},
   ];
 
@@ -67,7 +84,12 @@ export function Sidebar({className, isOpen, onClose}: SidebarProps) {
               key={item.name}
               onClick={() => {
                 if (item.path !== '#') {
-                  navigate(item.path);
+                  // Determine active tab for settings
+                  const state = item.path === '/settings' 
+                    ? { activeTab: item.name === 'Planos & Assinatura' ? 'billing' : 'profile' }
+                    : undefined;
+                    
+                  navigate(item.path, { state });
                   onClose();
                 }
               }}

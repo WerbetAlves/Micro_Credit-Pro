@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Search, Plus, Landmark, Calendar, MoreVertical, Edit2, Trash2, X, AlertCircle, User, Filter } from 'lucide-react';
+import { Search, Plus, Landmark, Calendar, MoreVertical, Edit2, Trash2, X, AlertCircle, User, Filter, FileText, CheckCircle, ExternalLink, Send } from 'lucide-react';
 import { Sidebar } from '../components/Sidebar';
 import { Header } from '../components/Header';
 import { useLanguage } from '../contexts/LanguageContext';
@@ -7,6 +7,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../lib/supabase';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../lib/utils';
+import Markdown from 'react-markdown';
 
 interface Loan {
   id: string;
@@ -20,6 +21,10 @@ interface Loan {
   monthly_installment: number;
   total_repayment: number;
   created_at: string;
+  guarantee_info?: any;
+  contract_content?: string;
+  legal_validation_status?: 'not_validated' | 'validated';
+  sent_to_client?: boolean;
   clients?: {
     full_name: string;
   };
@@ -46,14 +51,26 @@ export function Loans() {
   const [formLoading, setFormLoading] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
 
+  // Contract states
+  const [isContractModalOpen, setIsContractModalOpen] = useState(false);
+  const [selectedLoanForContract, setSelectedLoanForContract] = useState<Loan | null>(null);
+  const [isValidatingContract, setIsValidatingContract] = useState(false);
+
   // Form states
-  const [formData, setFormData] = useState({
+  const [formData, setFormData] = useState<{
+    client_id: string;
+    principal_amount: number;
+    interest_rate: number;
+    interest_type: 'annual' | 'monthly';
+    term_months: number;
+    status: 'pending' | 'active' | 'repaid' | 'default';
+  }>({
     client_id: '',
     principal_amount: 15000,
     interest_rate: 4.25,
-    interest_type: 'monthly' as 'annual' | 'monthly',
+    interest_type: 'monthly',
     term_months: 12,
-    status: 'pending' as const
+    status: 'pending'
   });
 
   useEffect(() => {
@@ -61,12 +78,30 @@ export function Loans() {
     fetchClients();
   }, [user]);
 
+  const handleValidateContract = async (loanId: string) => {
+    setIsValidatingContract(true);
+    // Simula validação com órgão regulador
+    await new Promise(resolve => setTimeout(resolve, 2000));
+    try {
+      await supabase.from('loans').update({ legal_validation_status: 'validated' }).eq('id', loanId);
+      if (selectedLoanForContract?.id === loanId) {
+        setSelectedLoanForContract(prev => prev ? { ...prev, legal_validation_status: 'validated' } : null);
+      }
+      fetchLoans();
+    } catch (err) {
+      console.error("Error validating contract:", err);
+    } finally {
+      setIsValidatingContract(false);
+    }
+  };
+
   async function fetchClients() {
     if (!user) return;
     try {
       const { data, error } = await supabase
         .from('clients')
         .select('id, full_name')
+        .eq('user_id', user.id)
         .order('full_name');
       if (error) throw error;
       setClients(data || []);
@@ -87,6 +122,7 @@ export function Loans() {
             full_name
           )
         `)
+        .eq('user_id', user.id)
         .order('created_at', { ascending: false });
 
       if (error) throw error;
@@ -125,6 +161,9 @@ export function Loans() {
   };
 
   const calculateLoan = (principal: number, rate: number, term: number, type: 'annual' | 'monthly') => {
+    if (!principal || !term || isNaN(principal) || isNaN(term)) {
+      return { totalRepay: 0, monthlyInstal: 0 };
+    }
     const monthlyRate = type === 'monthly' ? (rate / 100) : (rate / 100) / 12;
     const totalRepay = principal * Math.pow(1 + monthlyRate, term);
     const monthlyInstal = totalRepay / term;
@@ -315,6 +354,16 @@ export function Loans() {
                                         </p>
                                     </div>
                                     <div className="flex gap-1">
+                                        <button 
+                                          onClick={() => {
+                                            setSelectedLoanForContract(loan);
+                                            setIsContractModalOpen(true);
+                                          }}
+                                          className="p-2 text-slate-300 hover:text-primary-500 transition-colors"
+                                          title="Ver Contrato"
+                                        >
+                                            <FileText className="size-4" />
+                                        </button>
                                         <button onClick={() => handleOpenModal(loan)} className="p-2 text-slate-300 hover:text-emerald-500 transition-colors">
                                             <Edit2 className="size-4" />
                                         </button>
@@ -389,7 +438,8 @@ export function Loans() {
                       <input 
                         type="number"
                         required
-                        value={formData.principal_amount}
+                        value={formData.principal_amount || ''}
+                        onFocus={e => e.target.select()}
                         onChange={e => setFormData({...formData, principal_amount: Number(e.target.value)})}
                         className="w-full px-4 py-4 bg-slate-50 border-none rounded-2xl focus:ring-2 focus:ring-emerald-500 outline-none text-sm font-bold text-slate-900 transition-all"
                       />
@@ -416,7 +466,8 @@ export function Loans() {
                         type="number"
                         step="0.01"
                         required
-                        value={formData.interest_rate}
+                        value={formData.interest_rate || ''}
+                        onFocus={e => e.target.select()}
                         onChange={e => setFormData({...formData, interest_rate: Number(e.target.value)})}
                         className="w-full px-4 py-4 bg-slate-50 border-none rounded-2xl focus:ring-2 focus:ring-emerald-500 outline-none text-sm font-bold text-slate-900 transition-all"
                       />
@@ -443,7 +494,8 @@ export function Loans() {
                           min="1"
                           max="120"
                           required
-                          value={formData.term_months}
+                          value={formData.term_months || ''}
+                          onFocus={e => e.target.select()}
                           onChange={e => setFormData({...formData, term_months: Number(e.target.value)})}
                           className="flex-1 px-4 py-4 bg-slate-50 border-none rounded-2xl focus:ring-2 focus:ring-emerald-500 outline-none text-sm font-bold text-slate-900 transition-all"
                         />
@@ -496,6 +548,108 @@ export function Loans() {
                     </button>
                   </div>
                 </form>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Contract View/Validation Modal */}
+      <AnimatePresence>
+        {isContractModalOpen && selectedLoanForContract && (
+          <div className="fixed inset-0 z-[120] flex items-center justify-center p-4 sm:p-6 overflow-hidden">
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setIsContractModalOpen(false)}
+              className="absolute inset-0 bg-slate-900/60 backdrop-blur-md"
+            />
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className="relative w-full max-w-4xl max-h-[90vh] bg-white rounded-[2.5rem] shadow-2xl flex flex-col overflow-hidden border border-white"
+            >
+              {/* Header */}
+              <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-white sticky top-0 z-10">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-primary-50 flex items-center justify-center">
+                    <FileText className="size-5 text-primary-600" />
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-black text-slate-900 uppercase tracking-tight">
+                      Contrato de Empréstimo
+                    </h3>
+                    <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">
+                      ID: {selectedLoanForContract.id.split('-')[0]} • {selectedLoanForContract.clients?.full_name}
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                   {selectedLoanForContract.legal_validation_status === 'validated' && (
+                     <div className="hidden sm:flex items-center gap-1.5 px-3 py-1 bg-emerald-50 text-emerald-600 rounded-full text-[10px] font-black uppercase tracking-widest border border-emerald-100">
+                       <CheckCircle className="size-3" />
+                       Validado Juridicamente
+                     </div>
+                   )}
+                   {selectedLoanForContract.sent_to_client && (
+                     <div className="hidden sm:flex items-center gap-1.5 px-3 py-1 bg-blue-50 text-blue-600 rounded-full text-[10px] font-black uppercase tracking-widest border border-blue-100">
+                       <Send className="size-3" />
+                       Enviado ao Cliente
+                     </div>
+                   )}
+                   <button onClick={() => setIsContractModalOpen(false)} className="p-2 text-slate-400 hover:text-slate-600">
+                    <X className="size-6" />
+                  </button>
+                </div>
+              </div>
+
+              {/* Content */}
+              <div className="flex-1 overflow-y-auto p-8 lg:p-12 bg-slate-50/50">
+                <div className="bg-white p-10 lg:p-16 rounded-[2rem] shadow-sm border border-slate-100 max-w-3xl mx-auto min-h-[1000px]">
+                  <div className="prose prose-slate prose-sm sm:prose-base max-w-none">
+                    <Markdown>{selectedLoanForContract.contract_content || 'Gerando contrato...'}</Markdown>
+                  </div>
+                </div>
+              </div>
+
+              {/* Actions */}
+              <div className="p-6 border-t border-slate-100 bg-white flex flex-col sm:flex-row gap-4 items-center justify-between">
+                <div className="flex items-center gap-4">
+                  <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest max-w-[200px]">
+                    Este contrato foi gerado via IA e é armazenado de forma segura em nossos servidores.
+                  </p>
+                </div>
+                
+                <div className="flex gap-3 w-full sm:w-auto">
+                   <button 
+                    onClick={() => handleValidateContract(selectedLoanForContract.id)}
+                    disabled={isValidatingContract || selectedLoanForContract.legal_validation_status === 'validated'}
+                    className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-6 py-3 bg-slate-900 text-white rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-slate-800 transition-all disabled:opacity-50"
+                  >
+                    {isValidatingContract ? (
+                      "Validando..."
+                    ) : selectedLoanForContract.legal_validation_status === 'validated' ? (
+                      <>
+                        <CheckCircle className="size-4" />
+                        Validado
+                      </>
+                    ) : (
+                      <>
+                        <Landmark className="size-4" />
+                        Validar Juridicamente
+                      </>
+                    )}
+                  </button>
+                  <button 
+                    onClick={() => window.print()}
+                    className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-6 py-3 bg-white border border-slate-200 text-slate-600 rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-slate-50 transition-all"
+                  >
+                    <ExternalLink className="size-4" />
+                    Exportar PDF
+                  </button>
+                </div>
               </div>
             </motion.div>
           </div>

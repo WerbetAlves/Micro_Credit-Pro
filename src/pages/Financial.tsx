@@ -37,28 +37,59 @@ export function Financial() {
   const [txCategory, setTxCategory] = useState('other');
   const [txAmount, setTxAmount] = useState('');
   const [txDescription, setTxDescription] = useState('');
+  const [txWalletId, setTxWalletId] = useState('');
+  const [availableWallets, setAvailableWallets] = useState<{id: string, name: string}[]>([]);
 
   // Stats
   const [stats, setStats] = useState({ balance: 0, inflow: 0, outflow: 0 });
 
   useEffect(() => {
     fetchTransactions();
+    fetchWallets();
   }, [user]);
+
+  async function fetchWallets() {
+    if (!user) return;
+    try {
+      const { data } = await supabase.from('wallets').select('id, name').eq('user_id', user.id);
+      if (data) setAvailableWallets(data);
+    } catch (err) {
+      console.error('Error fetching wallets for selection:', err);
+    }
+  }
 
   async function fetchTransactions() {
     if (!user) return;
     setLoading(true);
     try {
+      // 1. Primeiro tenta buscar com o join de clientes
       const { data, error } = await supabase
         .from('transactions')
-        .select(`*, clients (full_name)`)
+        .select(`
+          *,
+          clients (
+            full_name
+          )
+        `)
+        .eq('user_id', user.id)
         .order('created_at', { ascending: false });
 
-      if (error) throw error;
+      if (error) {
+        // Fallback: se o join falhar (ex: coluna faltando), busca sem o join
+        console.warn('Join with clients failed, fetching without relationship:', error.message);
+        const { data: simpleData, error: simpleError } = await supabase
+          .from('transactions')
+          .select('*')
+          .eq('user_id', user.id)
+          .order('created_at', { ascending: false });
+        
+        if (simpleError) throw simpleError;
+        setTransactions(simpleData || []);
+      } else {
+        setTransactions(data || []);
+      }
       
       const txs = data || [];
-      setTransactions(txs);
-
       const inflow = txs.filter(t => t.type === 'income').reduce((acc, t) => acc + Number(t.amount), 0);
       const outflow = txs.filter(t => t.type === 'expense').reduce((acc, t) => acc + Number(t.amount), 0);
       setStats({ balance: inflow - outflow, inflow, outflow });
@@ -80,7 +111,8 @@ export function Financial() {
         type: txType,
         category: txCategory,
         amount: parseFloat(txAmount) || 0,
-        description: txDescription
+        description: txDescription,
+        wallet_id: txWalletId || null
       }]);
 
       if (error) throw error;
@@ -88,6 +120,7 @@ export function Financial() {
       setIsTxModalOpen(false);
       setTxAmount('');
       setTxDescription('');
+      setTxWalletId('');
       fetchTransactions(); // Atualiza a lista e os gráficos
     } catch (err: any) {
       console.error('Erro ao adicionar transação:', err.message);
@@ -291,6 +324,16 @@ export function Financial() {
                 <div className="space-y-2">
                   <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-4">Valor</label>
                   <input type="number" step="0.01" value={txAmount} onChange={e => setTxAmount(e.target.value)} placeholder="0.00" className="w-full bg-slate-50 border-none rounded-2xl px-6 py-4 text-sm font-bold focus:ring-2 focus:ring-emerald-100 outline-none" required />
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-4">Vincular a uma Carteira</label>
+                  <select value={txWalletId} onChange={e => setTxWalletId(e.target.value)} className="w-full bg-slate-50 border-none rounded-2xl px-6 py-4 text-sm font-bold text-slate-600 focus:ring-2 focus:ring-emerald-100 outline-none appearance-none">
+                    <option value="">Nenhuma (Geral)</option>
+                    {availableWallets.map(w => (
+                      <option key={w.id} value={w.id}>{w.name}</option>
+                    ))}
+                  </select>
                 </div>
 
                 <button type="submit" className="w-full bg-slate-900 text-white rounded-2xl py-4 font-black text-xs uppercase tracking-widest hover:bg-slate-800 transition-all active:scale-95 shadow-xl shadow-slate-200 mt-4">Salvar</button>

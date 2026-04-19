@@ -47,14 +47,16 @@ export function Analytics() {
       // 1. Fetch Loans & Status Distribution
       const { data: loans, error: loansError } = await supabase
         .from('loans')
-        .select('*');
+        .select('*')
+        .eq('user_id', user.id);
       
       if (loansError) throw loansError;
 
       // 2. Fetch Installments for Delinquency
       const { data: installments, error: instError } = await supabase
         .from('installments')
-        .select('*');
+        .select('*, loans!inner(user_id)')
+        .eq('loans.user_id', user.id);
 
       if (instError) throw instError;
 

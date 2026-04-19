@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Search, Bell, Plus, Menu } from 'lucide-react';
+import { Search, Bell, Plus, Menu, Zap } from 'lucide-react';
 import { Sidebar } from '../components/Sidebar';
 import { Header } from '../components/Header';
 import { AIAssistantDashboard } from '../components/AIAssistantDashboard';
@@ -8,22 +8,32 @@ import { LoanSimulator } from '../components/LoanSimulator';
 import { UpcomingCollections } from '../components/UpcomingCollections';
 import { RecentActivity } from '../components/RecentActivity';
 import { PortfolioHealth } from '../components/PortfolioHealth';
+import { OnboardingChecklist } from '../components/OnboardingChecklist';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useAuth } from '../contexts/AuthContext';
-import { supabase } from '../lib/supabase';
+import { useNavigate } from 'react-router-dom';
+import { supabase, isConfigured } from '../lib/supabase';
+import { cn } from '../lib/utils';
+import { AlertCircle } from 'lucide-react';
 
 export function Dashboard() {
   const { t, formatCurrency } = useLanguage();
   const { user } = useAuth();
+  const navigate = useNavigate();
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [profile, setProfile] = useState<any>(null);
   
   const [stats, setStats] = useState({
     totalCapital: 0,
     monthlyProfit: 0,
     activeLoans: 0,
     defaultRate: 0,
-    avgLoanAmount: 0
+    avgLoanAmount: 0,
+    hasWallets: false,
+    hasClients: false,
+    hasLoans: false
   });
+  const [errorVisible, setErrorVisible] = useState<string | null>(null);
 
   useEffect(() => {
     fetchDashboardStats();
@@ -33,6 +43,11 @@ export function Dashboard() {
     if (!user) return;
 
     try {
+      setErrorVisible(null);
+      // 0. Busca Perfil
+      const { data: profileData } = await supabase.from('profiles').select('*').single();
+      if (profileData) setProfile(profileData);
+
       // 1. Busca Empréstimos (Dinheiro Emprestado)
       const { data: loans, error: loansError } = await supabase
         .from('loans')
@@ -54,39 +69,50 @@ export function Dashboard() {
         .select('balance')
         .eq('user_id', user.id);
       
-      // Se não der erro, soma o saldo de todas as carteiras
       if (!walletsError && wallets) {
         totalWalletBalance = wallets.reduce((acc, w) => acc + Number(w.balance), 0);
       }
 
-      // 3. Lucro Mensal (Juros de parcelas pagas no mês atual)
+      // 3. Busca Contagem de Clientes (para o Onboarding)
+      const { count: clientsCount } = await supabase
+        .from('clients')
+        .select('*', { count: 'exact', head: true })
+        .eq('user_id', user.id);
+
+      // 4. Lucro Mensal (Cálculo robusto sem join complexo)
+      let monthlyP = 0;
       const now = new Date();
       const firstDay = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0];
       const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().split('T')[0];
       
       const { data: paidInstallments, error: instError } = await supabase
         .from('installments')
-        .select('amount, loans!inner(user_id)')
+        .select('amount, loan_id')
         .eq('status', 'paid')
-        .eq('loans.user_id', user.id)
         .gte('due_date', firstDay)
         .lte('due_date', lastDay);
 
-      if (instError) throw instError;
+      if (!instError && paidInstallments && loans) {
+        const myLoanIds = loans.map(l => l.id);
+        monthlyP = paidInstallments
+          .filter(i => myLoanIds.includes(i.loan_id))
+          .reduce((acc, i) => acc + Number(i.amount), 0);
+      }
 
-      const monthlyP = (paidInstallments || []).reduce((acc, i) => acc + Number(i.amount), 0);
-
-      // 4. Consolida tudo no Estado
+      // 5. Consolida tudo no Estado
       setStats({
-        // Capital Total agora é Empréstimos + Saldo nas Carteiras!
         totalCapital: totalLoansCapital + totalWalletBalance,
         monthlyProfit: monthlyP,
         activeLoans: activeCount,
         defaultRate: defRate,
-        avgLoanAmount: avgAmt
+        avgLoanAmount: avgAmt,
+        hasWallets: (wallets?.length || 0) > 0,
+        hasClients: (clientsCount || 0) > 0,
+        hasLoans: (loans?.length || 0) > 0
       });
     } catch (err: any) {
       console.error('Error fetching dashboard stats:', err.message);
+      setErrorVisible(err.message);
     }
   }
 
@@ -102,10 +128,28 @@ export function Dashboard() {
       <Sidebar isOpen={isSidebarOpen} onClose={() => setIsSidebarOpen(false)} />
 
       <main className="flex-1 lg:ml-72 min-h-screen pb-20 w-full transition-all duration-300">
-        <Header title={t.dashboard} onMenuClick={() => setIsSidebarOpen(true)} />
+        <Header title={t.dashboard} onMenuClick={() => setIsSidebarOpen(true)}>
+          {profile?.plan_type && (
+            <div className="hidden sm:flex items-center bg-white px-3 py-1.5 rounded-xl gap-2 border border-slate-200 shadow-sm">
+              <div className={cn(
+                "size-2 rounded-full animate-pulse",
+                profile.plan_type === 'free' ? "bg-slate-400" : "bg-emerald-500"
+              )} />
+              <span className="text-[10px] font-black uppercase tracking-widest text-slate-600">
+                Plano {profile.plan_type}
+              </span>
+            </div>
+          )}
+        </Header>
 
         <div className="px-4 md:px-6 lg:px-8 py-6 lg:py-10 w-full max-w-[1600px] mx-auto space-y-8 lg:space-y-12 transition-all">
           
+          <OnboardingChecklist 
+            hasWallets={stats.hasWallets}
+            hasClients={stats.hasClients}
+            hasLoans={stats.hasLoans}
+          />
+
           {/* KPI Grid - O Card "Total Capital" agora refletirá a nova conta */}
           <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 lg:gap-6">
             <KPICard 
@@ -164,7 +208,10 @@ export function Dashboard() {
                     <p className="text-sm text-emerald-50 font-medium opacity-90 leading-relaxed max-w-[280px]">
                       {t.supportText}
                     </p>
-                    <button className="bg-white text-emerald-600 px-6 py-3 rounded-2xl font-bold text-xs uppercase tracking-widest shadow-lg hover:scale-105 transition-transform active:scale-95">
+                    <button 
+                      onClick={() => navigate('/support')}
+                      className="bg-white text-emerald-600 px-6 py-3 rounded-2xl font-bold text-xs uppercase tracking-widest shadow-lg hover:scale-105 transition-transform active:scale-95"
+                    >
                       {t.liveChat}
                     </button>
                   </div>

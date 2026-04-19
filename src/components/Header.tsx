@@ -1,8 +1,9 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Search, Bell, Menu } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { useAuth } from '../contexts/AuthContext';
 import { useLanguage } from '../contexts/LanguageContext';
+import { supabase } from '../lib/supabase';
 import { UserProfileModal } from './UserProfileModal';
 import { NotificationsPopover, Notification } from './NotificationsPopover';
 
@@ -17,44 +18,53 @@ export function Header({ title, onMenuClick, children }: HeaderProps) {
   const { t } = useLanguage();
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
-  
-  // Mock Notifications State
-  const [notifications, setNotifications] = useState<Notification[]>([
-    {
-      id: '1',
-      type: 'payment',
-      title: 'Pagamento Recebido',
-      message: 'João Silva pagou a parcela #04 do empréstimo pessoal.',
-      timestamp: new Date(Date.now() - 1000 * 60 * 30), // 30 mins ago
-      isRead: false
-    },
-    {
-      id: '2',
-      type: 'alert',
-      title: 'Atraso Detectado',
-      message: 'A parcela de Maria Oliveira está 3 dias atrasada.',
-      timestamp: new Date(Date.now() - 1000 * 60 * 60 * 2), // 2 hours ago
-      isRead: false
-    },
-    {
-      id: '3',
-      type: 'loan',
-      title: 'Nova Solicitação',
-      message: 'Carlos Mendes solicitou um novo crédito de R$ 5.000,00.',
-      timestamp: new Date(Date.now() - 1000 * 60 * 60 * 24), // 1 day ago
-      isRead: true
-    }
-  ]);
+  const [profile, setProfile] = useState<any>(null);
+  const [notifications, setNotifications] = useState<Notification[]>([]);
 
-  const markAsRead = (id: string) => {
+  useEffect(() => {
+    async function fetchProfile() {
+      if (!user) return;
+      const { data } = await supabase.from('profiles').select('plan_type').single();
+      if (data) setProfile(data);
+    }
+    fetchProfile();
+    fetchNotifications();
+  }, [user]);
+
+  async function fetchNotifications() {
+    if (!user) return;
+    const { data } = await supabase
+      .from('notifications')
+      .select('*')
+      .eq('user_id', user.id)
+      .order('created_at', { ascending: false });
+    
+    if (data) {
+      setNotifications(data.map((n: any) => ({
+        id: n.id,
+        type: n.type,
+        title: n.title,
+        message: n.message,
+        timestamp: new Date(n.created_at),
+        isRead: n.is_read
+      })));
+    }
+  }
+
+  const markAsRead = async (id: string) => {
+    await supabase.from('notifications').update({ is_read: true }).eq('id', id);
     setNotifications(prev => prev.map(n => n.id === id ? { ...n, isRead: true } : n));
   };
 
-  const markAllAsRead = () => {
+  const markAllAsRead = async () => {
+    if (!user) return;
+    await supabase.from('notifications').update({ is_read: true }).eq('user_id', user.id);
     setNotifications(prev => prev.map(n => ({ ...n, isRead: true })));
   };
 
-  const clearAll = () => {
+  const clearAll = async () => {
+    if (!user) return;
+    await supabase.from('notifications').delete().eq('user_id', user.id);
     setNotifications([]);
   };
 
@@ -113,7 +123,9 @@ export function Header({ title, onMenuClick, children }: HeaderProps) {
             >
               <div className="hidden md:flex flex-col items-end">
                 <span className="text-xs font-bold text-slate-900 leading-none">{user?.user_metadata?.username || user?.user_metadata?.full_name || user?.email?.split('@')[0]}</span>
-                <span className="text-[10px] font-medium text-slate-400 uppercase mt-1">Emerald Member</span>
+                <span className="text-[10px] font-black text-emerald-600 uppercase mt-1 tracking-widest bg-emerald-50 px-2 py-0.5 rounded-md">
+                  Plano {profile?.plan_type || 'Free'}
+                </span>
               </div>
               <div className="w-8 h-8 lg:w-10 lg:h-10 rounded-xl overflow-hidden shadow-sm border border-slate-100 ring-2 ring-transparent hover:ring-primary-100 transition-all">
                 <img 
