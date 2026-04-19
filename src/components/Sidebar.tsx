@@ -12,7 +12,9 @@ import {
   PieChart, 
   CreditCard, 
   Calendar,
-  MessageSquareText
+  MessageSquareText,
+  Zap,
+  Shield
 } from 'lucide-react';
 import {cn} from '@/src/lib/utils';
 import { useLanguage } from '../contexts/LanguageContext';
@@ -30,23 +32,30 @@ interface SidebarProps {
 export function Sidebar({className, isOpen, onClose}: SidebarProps) {
   const { language, setLanguage, t } = useLanguage();
   const { currentTheme } = useTheme();
-  const { user, signOut } = useAuth();
+  const { user, profile, signOut } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const [isProfileOpen, setIsProfileOpen] = useState(false);
 
-  const navItems = [
-    {name: t.overview, icon: LayoutDashboard, path: '/'},
-    {name: t.clients, icon: Users, path: '/clients'},
-    {name: t.loans, icon: Landmark, path: '/loans'},
-    {name: t.calendar, icon: Calendar, path: '/calendar'},
-    {name: t.payments, icon: Wallet, path: '/payments'},
-    {name: t.adminSupport, icon: MessageSquareText, path: '/support'},
-    {name: t.financial, icon: BarChart3, path: '/financial'},
-    {name: t.analytics, icon: PieChart, path: '/analytics'},
-    {name: 'Planos & Assinatura', icon: CreditCard, path: '/settings'},
-    {name: t.settings, icon: Settings, path: '/settings'},
-  ];
+  const navItems = React.useMemo(() => {
+    const items = [
+      {name: t.overview, icon: LayoutDashboard, path: '/'},
+      {name: t.clients, icon: Users, path: '/clients'},
+      {name: t.loans, icon: Landmark, path: '/loans'},
+      {name: t.calendar, icon: Calendar, path: '/calendar'},
+      {name: t.payments, icon: Wallet, path: '/payments'},
+      {name: t.adminSupport, icon: MessageSquareText, path: '/support'},
+      {name: t.financial, icon: BarChart3, path: '/financial'},
+      {name: t.analytics, icon: PieChart, path: '/analytics'},
+      {name: t.settings, icon: Settings, path: '/settings'},
+    ];
+
+    if (profile?.is_admin) {
+      items.splice(1, 0, { name: t.adminPanel, icon: Shield, path: '/admin' });
+    }
+
+    return items;
+  }, [t, profile]);
 
   return (
     <>
@@ -148,7 +157,9 @@ export function Sidebar({className, isOpen, onClose}: SidebarProps) {
             <button 
               onClick={(e) => {
                 e.stopPropagation();
-                signOut();
+                if (confirm(t.confirmLogout)) {
+                  signOut();
+                }
               }}
               className="p-2 text-slate-400 hover:text-red-500 transition-colors"
               title={t.logout}

@@ -4,21 +4,32 @@ import { createClient as createSupabaseClient } from '../utils/supabase/client';
 export const FORCE_SIMULATION = true; 
 
 // Usamos import.meta.env porque este é um projeto Vite
+// Também usamos process.env como fallback para compatibilidade com o define do vite.config.ts
 // @ts-ignore
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';
+const supabaseUrl = (import.meta.env.VITE_SUPABASE_URL || import.meta.env.NEXT_PUBLIC_SUPABASE_URL || process.env.VITE_SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || '').trim();
 // @ts-ignore
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
+const supabaseAnonKey = (import.meta.env.VITE_SUPABASE_ANON_KEY || import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY || import.meta.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY || process.env.VITE_SUPABASE_ANON_KEY || process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY || '').trim();
 
 // Function to check if the URL is valid
 const isValidUrl = (url: string) => {
   try {
-    return url.startsWith('http://') || url.startsWith('https://');
+    return (url.startsWith('http://') || url.startsWith('https://')) && url.includes('.');
   } catch {
     return false;
   }
 };
 
-export const isConfigured = !FORCE_SIMULATION && isValidUrl(supabaseUrl) && supabaseAnonKey && !supabaseUrl.includes('your-project-url');
+export const isConfigured = !FORCE_SIMULATION && 
+  isValidUrl(supabaseUrl) && 
+  supabaseAnonKey !== '' && 
+  supabaseAnonKey !== 'undefined' &&
+  !supabaseUrl.includes('your-project-url');
+
+if (isConfigured) {
+  console.log('✅ Supabase: Conexão de produção ATIVA');
+} else {
+  console.log('💡 Supabase: Rodando em modo SIMULAÇÃO (Configuração ausente ou incompleta)');
+}
 
 // HELPER: Simulação com Persistência em LocalStorage para desenvolvimento do SaaS
 const getLocalData = (key: string, initial: any[]) => {
@@ -34,94 +45,206 @@ const saveLocalData = (key: string, data: any[]) => {
 
 export const supabase = isConfigured
   ? createSupabaseClient()
-  : ({
-      from: (table: string) => {
-        const createChain = (data: any[]) => {
-          const res = { data, error: null };
-          const p = Promise.resolve(res);
-          return Object.assign(p, {
-            insert: (newRows: any[]) => {
-              const current = getLocalData(table, []);
-              const updated = [...current, ...newRows.map(r => ({ ...r, id: crypto.randomUUID(), created_at: new Date().toISOString() }))];
-              saveLocalData(table, updated);
-              return Promise.resolve({ data: newRows[0], error: null });
-            },
-            select: (query?: string) => {
-              // Simulação básica de joins e tabelas específicas
+  : (() => {
+      const from = (table: string) => {
+        let filters: Array<{ type: string; column: string; value: any }> = [];
+        
+        const applyFilters = (data: any[]) => {
+          let filtered = [...data];
+          filters.forEach(f => {
+            if (f.type === 'eq') filtered = filtered.filter(item => item[f.column] === f.value);
+            if (f.type === 'neq') filtered = filtered.filter(item => item[f.column] !== f.value);
+            if (f.type === 'gte') filtered = filtered.filter(item => item[f.column] >= f.value);
+            if (f.type === 'lte') filtered = filtered.filter(item => item[f.column] <= f.value);
+            if (f.type === 'in') filtered = filtered.filter(item => f.value.includes(item[f.column]));
+          });
+          return filtered;
+        };
+
+        const createChain = () => {
+          let operation: 'select' | 'insert' | 'update' | 'delete' | null = null;
+          let opArgs: any = null;
+          let opOptions: any = null;
+
+          const execute = async () => {
+            if (operation === 'select') {
               let baseData = getLocalData(table, []);
               
+              // Seed data if empty
               if (table === 'wallets' && baseData.length === 0) {
-                baseData = [{ id: 'w1', name: 'Carteira Principal', balance: 5000, type: 'cash', user_id: '123' }];
+                baseData = [
+                  { id: 'w1', name: 'Carteira Principal', balance: 5000, type: 'bank', user_id: '123', is_connected: false },
+                  { id: 'w2', name: 'Cofre Físico', balance: 1200, type: 'physical', user_id: '123', is_connected: false }
+                ];
+                saveLocalData(table, baseData);
               }
-              
               if (table === 'profiles' && baseData.length === 0) {
-                baseData = [{ 
-                  id: '123', 
-                  full_name: 'Usuário Admin Demo', 
-                  business_name: 'Minha Fomentadora',
-                  document_id: '123.456.789-00',
-                  phone: '(11) 98888-7777',
-                  address: 'Av. Paulista, 1000 - São Paulo, SP',
-                  plan_type: 'free', 
-                  subscription_status: 'active',
-                  role: 'admin',
-                  payment_methods: [
-                    { id: '1', type: 'credit', last4: '4242', brand: 'visa', name: 'Cartão Pessoal' }
-                  ]
-                }];
+                baseData = [{ id: '1 profile', user_id: '123', full_name: 'Usuário Admin Demo', plan_type: 'free' }];
+                saveLocalData(table, baseData);
               }
 
-              if (table === 'loans') {
-                baseData = baseData.map((d: any) => ({
-                  ...d,
-                  legal_validation_status: d.legal_validation_status || 'not_validated',
-                  sent_to_client: d.sent_to_client || false
+              let filtered = applyFilters(baseData);
+
+              // Handle Joins (Hierarchical support for SaaS Emerald)
+              if (opArgs?.includes('loans')) {
+                const loans = getLocalData('loans', []);
+                const clients = getLocalData('clients', []);
+                filtered = filtered.map(item => {
+                  const loan = loans.find(l => l.id === item.loan_id);
+                  if (loan && opArgs.includes('clients')) {
+                    loan.clients = clients.find(c => c.id === loan.client_id);
+                  }
+                  return { ...item, loans: loan };
+                });
+              } else if (opArgs?.includes('clients')) {
+                const clients = getLocalData('clients', []);
+                filtered = filtered.map(item => ({
+                  ...item,
+                  clients: clients.find(c => c.id === item.client_id)
                 }));
               }
 
-              if (table === 'notifications' && baseData.length === 0) {
-                baseData = [
-                  { id: '1', user_id: '123', type: 'payment', title: 'Pagamento Recebido', message: 'João Silva pagou a parcela #04.', created_at: new Date(Date.now() - 1000 * 60 * 30).toISOString(), is_read: false },
-                  { id: '2', user_id: '123', type: 'alert', title: 'Atraso Detectado', message: 'A parcela de Maria Oliveira está 3 dias atrasada.', created_at: new Date(Date.now() - 1000 * 60 * 60 * 2).toISOString(), is_read: false },
-                  { id: '3', user_id: '123', type: 'loan', title: 'Novo Empréstimo', message: 'Contrato de Carlos Mendes gerado com sucesso.', created_at: new Date(Date.now() - 1000 * 60 * 60 * 24).toISOString(), is_read: true },
-                ];
+              const count = filtered.length;
+
+              if (opOptions?.head) {
+                return { data: null, error: null, count };
               }
 
-              if (query?.includes('clients')) {
-                const clients = getLocalData('clients', []);
-                baseData = baseData.map((d: any) => ({ ...d, clients: clients.find((c: any) => c.id === d.client_id) }));
-              }
-              return createChain(baseData);
+              return { data: filtered, error: null, count };
+            }
+
+            if (operation === 'insert') {
+              const current = getLocalData(table, []);
+              const newItems = Array.isArray(opArgs) ? opArgs : [opArgs];
+              const toInsert = newItems.map(item => ({
+                id: crypto.randomUUID(),
+                created_at: new Date().toISOString(),
+                ...item
+              }));
+              const updated = [...current, ...toInsert];
+              saveLocalData(table, updated);
+              return { data: Array.isArray(opArgs) ? toInsert : toInsert[0], error: null };
+            }
+
+            if (operation === 'update') {
+              const current = getLocalData(table, []);
+              const updated = current.map((item: any) => {
+                let matches = true;
+                filters.forEach(f => {
+                  if (f.type === 'eq' && item[f.column] !== f.value) matches = false;
+                });
+                
+                if (matches) {
+                  return { ...item, ...opArgs };
+                }
+                return item;
+              });
+              saveLocalData(table, updated);
+              return { data: opArgs, error: null };
+            }
+
+            if (operation === 'delete') {
+              const current = getLocalData(table, []);
+              const updated = current.filter((item: any) => {
+                let matches = true;
+                filters.forEach(f => {
+                  if (f.type === 'eq' && item[f.column] !== f.value) matches = false;
+                });
+                return !matches;
+              });
+              saveLocalData(table, updated);
+              return { data: null, error: null };
+            }
+
+            return { data: [], error: null };
+          };
+
+          const chain: any = {
+            then: (resolve: any) => {
+              execute().then(resolve);
+            },
+            select: (columns?: string, options?: { count?: string; head?: boolean }) => {
+              operation = 'select';
+              opArgs = columns;
+              opOptions = options;
+              return chain;
+            },
+            insert: (rows: any | any[]) => {
+              operation = 'insert';
+              opArgs = rows;
+              return chain;
             },
             update: (updates: any) => {
-              const current = getLocalData(table, []);
-              const updated = current.map((item: any) => ({ ...item, ...updates }));
-              saveLocalData(table, updated);
-              return Promise.resolve({ data: updates, error: null });
+              operation = 'update';
+              opArgs = updates;
+              return chain;
             },
-            delete: () => Promise.resolve({ data: null, error: null }),
-            eq: () => createChain(data),
-            order: () => createChain(data),
-            single: () => Promise.resolve({ data: data[0] || null, error: null }),
-            gte: () => createChain(data),
-            lte: () => createChain(data),
-            limit: () => createChain(data),
-          });
+            delete: () => {
+              operation = 'delete';
+              return chain;
+            },
+            eq: (column: string, value: any) => {
+              filters.push({ type: 'eq', column, value });
+              return chain;
+            },
+            neq: (column: string, value: any) => {
+              filters.push({ type: 'neq', column, value });
+              return chain;
+            },
+            gte: (column: string, value: any) => {
+              filters.push({ type: 'gte', column, value });
+              return chain;
+            },
+            lte: (column: string, value: any) => {
+              filters.push({ type: 'lte', column, value });
+              return chain;
+            },
+            in: (column: string, value: any[]) => {
+              filters.push({ type: 'in', column, value });
+              return chain;
+            },
+            upsert: (rows: any | any[]) => {
+              operation = 'insert';
+              opArgs = rows;
+              return chain;
+            },
+            order: () => chain,
+            limit: () => chain,
+            single: async () => {
+              const { data, error } = await execute();
+              return { data: (data && Array.isArray(data)) ? data[0] : (data || null), error };
+            },
+            maybeSingle: async () => {
+              const { data, error } = await execute();
+              return { data: (data && Array.isArray(data)) ? data[0] : (data || null), error };
+            }
+          };
+          return chain;
         };
 
-        return createChain([]);
-      },
-      auth: {
-        signInWithPassword: () => Promise.resolve({ data: { user: { id: '123', email: 'contato@suaempresa.com', user_metadata: { full_name: 'Usuário Admin Demo' } }, session: { access_token: 'mock-token' } }, error: null }),
-        signInWithOAuth: () => Promise.resolve({ data: { user: { id: '123', email: 'contato@suaempresa.com' }, session: { access_token: 'mock-token' } }, error: null }),
-        signUp: () => Promise.resolve({ data: { user: { id: '123', email: 'contato@suaempresa.com' }, session: { access_token: 'mock-token' } }, error: null }),
-        signOut: () => Promise.resolve({ error: null }),
-        onAuthStateChange: (cb: any) => {
-          setTimeout(() => cb('SIGNED_IN', { user: { id: '123', email: 'contato@suaempresa.com', user_metadata: { full_name: 'Usuário Admin Demo' }, role: 'admin' }, session: { access_token: 'mock-token' } }), 100);
-          return { data: { subscription: { unsubscribe: () => {} } } };
+        return createChain();
+      };
+
+      return {
+        from,
+        auth: {
+          signInWithPassword: () => Promise.resolve({ data: { user: { id: '123', email: 'admin@emerald.pro' }, session: { access_token: 'abc' } }, error: null }),
+          signInWithOAuth: () => Promise.resolve({ data: { user: { id: '123' } }, error: null }),
+          signUp: () => Promise.resolve({ data: { user: { id: '123' } }, error: null }),
+          signOut: () => Promise.resolve({ error: null }),
+          onAuthStateChange: (cb: any) => {
+            setTimeout(() => cb('SIGNED_IN', { user: { id: '123', email: 'admin@emerald.pro' }, session: { access_token: 'abc' } }), 100);
+            return { data: { subscription: { unsubscribe: () => {} } } };
+          },
+          getSession: () => Promise.resolve({ data: { session: { user: { id: '123', email: 'admin@emerald.pro' }, access_token: 'abc' } }, error: null }),
+          getUser: () => Promise.resolve({ data: { user: { id: '123', email: 'admin@emerald.pro' } }, error: null }),
+          updateUser: (data: any) => Promise.resolve({ data: { user: { id: '123', ...data } }, error: null }),
         },
-        getSession: () => Promise.resolve({ data: { session: { user: { id: '123', email: 'contato@suaempresa.com' }, access_token: 'mock-token' } }, error: null }),
-        updateUser: (data: any) => Promise.resolve({ data: { user: { id: '123', ...data } }, error: null }),
-        getUser: () => Promise.resolve({ data: { user: { id: '123', email: 'contato@suaempresa.com' } }, error: null }),
-      }
-    } as any);
+        storage: {
+          from: () => ({
+            upload: () => Promise.resolve({ data: { path: 'mock-path' }, error: null }),
+            getPublicUrl: () => ({ data: { publicUrl: 'https://picsum.photos/seed/user/200' } }),
+          })
+        }
+      } as any;
+    })();

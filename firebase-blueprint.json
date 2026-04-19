@@ -1,0 +1,26 @@
+{
+  "entities": {
+    "BankConnection": {
+      "title": "Bank Connection",
+      "description": "A secure connection to a financial institution via Open Finance.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "format": "uuid" },
+        "user_id": { "type": "string", "format": "uuid" },
+        "institution_name": { "type": "string", "description": "Name of the bank" },
+        "institution_id": { "type": "string", "description": "Slug/Internal ID of the bank" },
+        "status": { "type": "string", "enum": ["connected", "syncing", "error"] },
+        "last_sync": { "type": "string", "format": "date-time" },
+        "balance": { "type": "number", "description": "Last known total balance from this connection" },
+        "wallet_id": { "type": "string", "format": "uuid", "description": "Optional link to an Emerald wallet" }
+      },
+      "required": ["user_id", "institution_name", "status"]
+    }
+  },
+  "firestore": {
+    "bank_connections": {
+      "schema": "BankConnection",
+      "description": "Stores user bank connections for Open Finance."
+    }
+  }
+}

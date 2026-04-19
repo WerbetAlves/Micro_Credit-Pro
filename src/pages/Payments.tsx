@@ -17,6 +17,7 @@ interface Installment {
   loans?: {
     clients?: {
       full_name: string;
+      phone: string;
     };
   };
 }
@@ -243,6 +244,30 @@ export function Payments() {
     }
   };
 
+  // Calculate installment order (X of Y)
+  const getInstallmentOrder = (inst: Installment) => {
+    const loanInstallments = installments
+      .filter(i => i.loan_id === inst.loan_id)
+      .sort((a, b) => new Date(a.due_date).getTime() - new Date(b.due_date).getTime());
+    
+    const index = loanInstallments.findIndex(i => i.id === inst.id);
+    return {
+      current: index + 1,
+      total: loanInstallments.length
+    };
+  };
+
+  const handleWhatsApp = (inst: Installment) => {
+    const phone = inst.loans?.clients?.phone?.replace(/\D/g, '');
+    if (!phone) return;
+    
+    const { current, total } = getInstallmentOrder(inst);
+    const message = encodeURIComponent(
+      `Olá ${inst.loans?.clients?.full_name}! 👋\n\nSou do financeiro da EmeraldPro. Estou entrando em contato sobre a parcela ${current}/${total} do seu empréstimo, que vence no dia ${formatDate(inst.due_date)}.\n\nValor: ${formatCurrency(inst.amount)}\n\nComo podemos prosseguir com o pagamento hoje?`
+    );
+    window.open(`https://wa.me/55${phone}?text=${message}`, '_blank');
+  };
+
   const filteredInstallments = installments.filter(inst => {
     const clientName = inst.loans?.clients?.full_name || '';
     const matchesSearch = clientName.toLowerCase().includes(search.toLowerCase());
@@ -273,7 +298,7 @@ export function Payments() {
             className="flex items-center gap-2 bg-emerald-500 text-white px-4 py-2.5 rounded-2xl font-bold text-xs uppercase tracking-widest shadow-lg shadow-emerald-200 hover:bg-emerald-600 transition-all active:scale-95"
           >
             <Plus className="size-4" />
-            <span className="hidden sm:inline">{t.addPayment || 'Add Payment'}</span>
+            <span className="hidden sm:inline">{t.addPayment}</span>
           </button>
         </header>
 
@@ -289,7 +314,7 @@ export function Payments() {
                 <p className="text-xl font-black text-amber-500">{formatCurrency(stats.totalUpcoming)}</p>
             </div>
             <div className="bg-white p-6 rounded-[1.5rem] border border-slate-50 shadow-sm">
-                <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-1">Total {t.late}</p>
+                <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-1">{t.total} {t.late}</p>
                 <p className="text-xl font-black text-red-500">{formatCurrency(stats.totalLate)}</p>
             </div>
           </div>
@@ -321,95 +346,117 @@ export function Payments() {
             </div>
           </div>
 
-          {/* Installments Table */}
-          <div className="bg-white rounded-[2rem] shadow-sm border border-slate-50 overflow-hidden">
-            <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse">
-                <thead>
-                  <tr className="bg-slate-50/50">
-                    <th className="px-6 py-5 text-[10px] font-bold uppercase tracking-widest text-slate-400">{t.clientName}</th>
-                    <th className="px-6 py-5 text-[10px] font-bold uppercase tracking-widest text-slate-400">{t.dueDate}</th>
-                    <th className="px-6 py-5 text-[10px] font-bold uppercase tracking-widest text-slate-400">{t.amount}</th>
-                    <th className="px-6 py-5 text-[10px] font-bold uppercase tracking-widest text-slate-400">{t.status}</th>
-                    <th className="px-6 py-5 text-[10px] font-bold uppercase tracking-widest text-slate-400 text-right">{t.action}</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-50">
-                  {loading ? (
-                    Array.from({ length: 5 }).map((_, i) => (
-                      <tr key={i} className="animate-pulse">
-                        <td colSpan={5} className="px-6 py-8"><div className="h-4 bg-slate-100 rounded w-1/3"></div></td>
-                      </tr>
-                    ))
-                  ) : filteredInstallments.length === 0 ? (
-                    <tr>
-                        <td colSpan={5} className="px-6 py-20 text-center text-slate-400 font-medium">
-                            {t.noInstallments}
-                        </td>
-                    </tr>
-                  ) : (
-                    filteredInstallments.map((inst) => (
-                      <tr key={inst.id} className="hover:bg-slate-50/50 transition-colors group">
-                        <td className="px-6 py-5">
-                          <div className="flex items-center gap-3">
-                            <div className="w-8 h-8 rounded-lg bg-emerald-50 flex items-center justify-center shrink-0">
-                                <User className="size-4 text-emerald-600" />
-                            </div>
-                            <span className="text-sm font-bold text-slate-900 truncate">
-                                {inst.loans?.clients?.full_name}
-                            </span>
-                          </div>
-                        </td>
-                        <td className="px-6 py-5">
-                          <div className="flex items-center gap-2 text-slate-500 text-sm font-medium">
-                            <Calendar className="size-3.5 text-slate-300" />
-                            {formatDate(inst.due_date)}
-                          </div>
-                        </td>
-                        <td className="px-6 py-5">
-                          <span className="text-sm font-black text-slate-900">{formatCurrency(inst.amount)}</span>
-                        </td>
-                        <td className="px-6 py-5">
-                          <div className="flex items-center gap-2">
-                             {inst.status === 'paid' && <CheckCircle2 className="size-3.5 text-emerald-500" />}
-                             {inst.status === 'late' && <XCircle className="size-3.5 text-red-500" />}
-                             {inst.status === 'upcoming' && <Clock className="size-3.5 text-amber-500" />}
-                             <span className={cn(
-                                "text-[10px] font-bold uppercase tracking-wider",
-                                inst.status === 'paid' ? "text-emerald-600" :
-                                inst.status === 'upcoming' ? "text-amber-600" : "text-red-600"
-                              )}>
-                                {t[inst.status]}
-                              </span>
-                          </div>
-                        </td>
-                        <td className="px-6 py-5 text-right">
-                          <div className="flex items-center justify-end gap-2">
-                            {inst.status !== 'paid' && (
-                              <button 
-                                onClick={() => handleMarkAsPaid(inst.id)}
-                                className="px-4 py-2 bg-emerald-500 text-white rounded-xl text-[10px] font-bold uppercase tracking-widest shadow-md shadow-emerald-100 hover:bg-emerald-600 transition-all active:scale-95"
-                              >
-                                {t.markAsPaid}
-                              </button>
-                            )}
-                            <div className="flex gap-1 opacity-10 group-hover:opacity-100 transition-opacity">
-                              <button onClick={() => handleOpenModal(inst)} className="p-2 text-slate-400 hover:text-emerald-500 transition-colors">
-                                <Edit2 className="size-4" />
-                              </button>
-                              <button onClick={() => handleDelete(inst.id)} className="p-2 text-slate-400 hover:text-red-500 transition-colors">
-                                <Trash2 className="size-4" />
-                              </button>
-                            </div>
-                          </div>
-                        </td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
+          {/* Installments Cards / Table */}
+          {loading ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {Array.from({ length: 6 }).map((_, i) => (
+                <div key={i} className="bg-white rounded-[2rem] p-6 shadow-sm border border-slate-50 animate-pulse">
+                  <div className="flex items-center gap-4 mb-4">
+                    <div className="w-12 h-12 rounded-2xl bg-slate-100" />
+                    <div className="space-y-2 flex-1">
+                      <div className="h-4 bg-slate-100 rounded w-1/2" />
+                      <div className="h-3 bg-slate-100 rounded w-1/3" />
+                    </div>
+                  </div>
+                  <div className="h-10 bg-slate-100 rounded-xl" />
+                </div>
+              ))}
             </div>
-          </div>
+          ) : filteredInstallments.length === 0 ? (
+            <div className="bg-white rounded-[2rem] p-20 text-center border border-slate-50">
+               <Calendar className="size-12 text-slate-200 mx-auto mb-4" />
+               <p className="text-slate-400 font-medium">{t.noInstallments}</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {filteredInstallments.map((inst) => {
+                const { current, total } = getInstallmentOrder(inst);
+                return (
+                  <motion.div 
+                    key={inst.id}
+                    layout
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="bg-white rounded-[2rem] p-6 shadow-sm border border-slate-50 hover:shadow-xl hover:shadow-slate-100/50 transition-all group"
+                  >
+                    <div className="flex items-start justify-between mb-6">
+                      <div className="flex items-center gap-4">
+                        <div className="w-12 h-12 rounded-2xl bg-emerald-50 flex items-center justify-center shrink-0">
+                          <User className="size-6 text-emerald-600" />
+                        </div>
+                        <div>
+                          <h4 className="text-sm font-black text-slate-900 truncate max-w-[150px]">
+                            {inst.loans?.clients?.full_name}
+                          </h4>
+                          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">
+                            {t.installment} {current} {t.of} {total}
+                          </span>
+                        </div>
+                      </div>
+                      <div className={cn(
+                        "px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest",
+                        inst.status === 'paid' ? "bg-emerald-50 text-emerald-600" :
+                        inst.status === 'upcoming' ? "bg-amber-50 text-amber-600" : "bg-red-50 text-red-600"
+                      )}>
+                        {t[inst.status]}
+                      </div>
+                    </div>
+
+                    <div className="space-y-4 mb-6">
+                      <div className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl">
+                         <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{t.amount}</span>
+                         <span className="text-lg font-black text-slate-900">{formatCurrency(inst.amount)}</span>
+                      </div>
+                      <div className="flex items-center gap-3 text-slate-500 text-xs font-bold px-1 uppercase tracking-widest">
+                        <Calendar className="size-4 text-slate-300" />
+                        {t.dueDate}: {formatDate(inst.due_date)}
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                       {inst.status !== 'paid' ? (
+                         <button 
+                           onClick={() => handleMarkAsPaid(inst.id)}
+                           className="flex-1 py-3 bg-emerald-500 text-white rounded-xl text-[10px] font-black uppercase tracking-[0.15em] shadow-lg shadow-emerald-100 hover:bg-emerald-600 transition-all active:scale-[0.98]"
+                         >
+                           {t.markAsPaid}
+                         </button>
+                       ) : (
+                         <div className="flex-1 py-3 bg-emerald-50 text-emerald-600 rounded-xl text-[10px] font-black uppercase tracking-[0.15em] flex items-center justify-center gap-2">
+                           <CheckCircle2 className="size-3" />
+                           {t.paid}
+                         </div>
+                       )}
+                       
+                       <button 
+                        onClick={() => handleWhatsApp(inst)}
+                        className="p-3 bg-green-50 text-green-600 rounded-xl hover:bg-green-100 transition-all"
+                        title="Contact via WhatsApp"
+                       >
+                         <svg className="size-5 fill-current" viewBox="0 0 24 24">
+                           <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.412.247-.694.247-1.289.173-1.412-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.414 0 .018 5.393 0 12.029c0 2.119.554 4.187 1.605 6.006L0 24l6.117-1.605a11.79 11.79 0 005.925 1.588h.005c6.632 0 12.031-5.391 12.036-12.029a11.85 11.85 0 00-3.527-8.513z"/>
+                         </svg>
+                       </button>
+
+                       <div className="relative group/menu">
+                          <button className="p-3 bg-slate-50 text-slate-400 rounded-xl hover:text-emerald-500 transition-all">
+                              <MoreVertical className="size-4" />
+                          </button>
+                          <div className="absolute right-0 bottom-full mb-2 w-48 bg-white rounded-2xl shadow-xl border border-slate-100 opacity-0 invisible group-hover/menu:opacity-100 group-hover/menu:visible transition-all z-20 overflow-hidden">
+                              <button onClick={() => handleOpenModal(inst)} className="w-full px-4 py-3 text-left text-xs font-bold text-slate-600 hover:bg-slate-50 flex items-center gap-2">
+                                <Edit2 className="size-3.5" /> {t.edit}
+                              </button>
+                              <button onClick={() => handleDelete(inst.id)} className="w-full px-4 py-3 text-left text-xs font-bold text-red-500 hover:bg-red-50 flex items-center gap-2 border-t border-slate-50">
+                                <Trash2 className="size-3.5" /> {t.delete}
+                              </button>
+                          </div>
+                       </div>
+                    </div>
+                  </motion.div>
+                );
+              })}
+            </div>
+          )}
         </div>
       </main>
 

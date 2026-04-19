@@ -49,12 +49,12 @@ export function RecentActivity() {
       const combined: Activity[] = [];
 
       (latestLoans || []).forEach((l: any) => {
-        const guaranteeText = l.guarantee_info ? ` (+ Garantia: ${l.guarantee_info.type})` : '';
+        const guaranteeText = l.guarantee_info ? ` (+ ${t.guarantee}: ${l.guarantee_info.type})` : '';
         combined.push({
           id: l.id,
           type: 'loan',
           title: t.newLoanApproved,
-          subtitle: `${formatCurrency(l.principal_amount)} for ${l.clients?.full_name}${guaranteeText}`,
+          subtitle: `${formatCurrency(l.principal_amount)} ${t.for} ${l.clients?.full_name}${guaranteeText}`,
           time: new Date(l.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
           icon: PlusSquare,
           color: 'text-blue-500',
@@ -67,7 +67,7 @@ export function RecentActivity() {
           id: p.id,
           type: 'payment',
           title: t.paymentReceived,
-          subtitle: `${formatCurrency(p.amount)} from ${p.loans?.clients?.full_name}`,
+          subtitle: `${formatCurrency(p.amount)} ${t.from} ${p.loans?.clients?.full_name}`,
           time: new Date(p.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
           icon: CheckCircle2,
           color: 'text-emerald-500',

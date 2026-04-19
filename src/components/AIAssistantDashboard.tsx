@@ -269,14 +269,14 @@ export function AIAssistantDashboard() {
           config: { systemInstruction }
         });
         
-        setMessages(prev => [...prev, { role: 'assistant', content: finalResponse.text || "Operação concluída." }]);
+        setMessages(prev => [...prev, { role: 'assistant', content: finalResponse.text || (t.dashboard === 'Dashboard Overview' ? "Operation completed." : "Operação concluída.") }]);
       } else {
-        setMessages(prev => [...prev, { role: 'assistant', content: response.text || "Desculpe, tive um problema ao processar sua solicitação." }]);
+        setMessages(prev => [...prev, { role: 'assistant', content: response.text || (t.dashboard === 'Dashboard Overview' ? "Sorry, I had a problem processing your request." : "Desculpe, tive um problema ao processar sua solicitação.") }]);
       }
 
     } catch (err: any) {
       console.error('Gemini Error:', err.message);
-      setMessages(prev => [...prev, { role: 'assistant', content: "Houve um erro técnico ao consultar a inteligência. Verifique sua conexão ou chave de API." }]);
+      setMessages(prev => [...prev, { role: 'assistant', content: t.dashboard === 'Dashboard Overview' ? "There was a technical error consulting the intelligence. Check your connection or API key." : "Houve um erro técnico ao consultar a inteligência. Verifique sua conexão ou chave de API." }]);
     } finally {
       setLoading(false);
     }
@@ -337,7 +337,7 @@ export function AIAssistantDashboard() {
                     <h4 className="text-sm font-black text-slate-900 uppercase tracking-tight">{t.smartAssistant}</h4>
                     <div className="flex items-center gap-1.5">
                       <div className="size-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">IA Consultora Ativa</span>
+                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{t.aiConsulting || 'AI Consulting Active'}</span>
                     </div>
                   </div>
                 </div>

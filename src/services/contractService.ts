@@ -16,9 +16,11 @@ export async function generateLoanContract(loanData: any, clientData: any, userD
     - Documento: ${clientData?.document_id || 'Não informado'}
     
     DETALHES DO EMPRÉSTIMO:
+    - Categoria: ${loanData.category || 'Geral'}
     - Valor Principal: R$ ${loanData.principal_amount}
     - Taxa de Juros: ${loanData.interest_rate}% ${loanData.interest_type === 'monthly' ? 'ao mês' : 'ao ano'}
-    - Prazo: ${loanData.term_months} meses
+    - Prazo: ${loanData.term_months} parcelas
+    - Frequência de Pagamento: ${loanData.payment_frequency === 'daily' ? 'Diário' : loanData.payment_frequency === 'weekly' ? 'Semanal' : loanData.payment_frequency === 'biweekly' ? 'Quinzenal' : 'Mensal'}
     - Valor da Parcela: R$ ${loanData.monthly_installment}
     - Total a Pagar: R$ ${loanData.total_repayment}
     - Garantia: ${loanData.guarantee_info ? `${loanData.guarantee_info.type} - ${loanData.guarantee_info.description}` : 'Nenhuma'}

@@ -5,6 +5,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../lib/supabase';
 import { motion, AnimatePresence } from 'motion/react';
 import { generateLoanContract } from '../services/contractService';
+import { cn } from '../lib/utils';
 
 export function LoanSimulator() {
   const { formatCurrency } = useLanguage();
@@ -14,7 +15,12 @@ export function LoanSimulator() {
   const [rate, setRate] = useState('5');
   const [duration, setDuration] = useState('12');
   const [interestType, setInterestType] = useState<'monthly' | 'annual'>('monthly');
-  const [paymentFrequency, setPaymentFrequency] = useState<'monthly' | 'daily'>('monthly');
+  const [paymentFrequency, setPaymentFrequency] = useState<'monthly' | 'daily' | 'weekly' | 'biweekly'>('monthly');
+  const [paymentDays, setPaymentDays] = useState<string[]>([]);
+  const [firstInstallmentDate, setFirstInstallmentDate] = useState(new Date().toISOString().split('T')[0]);
+  const [firstInstallmentDueDate, setFirstInstallmentDueDate] = useState(new Date(new Date().setMonth(new Date().getMonth() + 1)).toISOString().split('T')[0]);
+  const [notes, setNotes] = useState('');
+  const [category, setCategory] = useState('Microcrédito');
   
   // Novos estados para vinculação com o banco de dados
   const [clients, setClients] = useState<any[]>([]);
@@ -56,6 +62,27 @@ export function LoanSimulator() {
     if (data) setClients(data);
   }
 
+  const weekDays = [
+    { id: 'sunday', label: 'D' },
+    { id: 'monday', label: 'S' },
+    { id: 'tuesday', label: 'T' },
+    { id: 'wednesday', label: 'Q' },
+    { id: 'thursday', label: 'Q' },
+    { id: 'friday', label: 'S' },
+    { id: 'saturday', label: 'S' },
+  ];
+
+  const toggleDay = (dayId: string) => {
+    if (paymentFrequency === 'daily') {
+      setPaymentDays(prev => 
+        prev.includes(dayId) ? prev.filter(d => d !== dayId) : [...prev, dayId]
+      );
+    } else {
+      // Para semanal e quinzenal, permite apenas um dia
+      setPaymentDays([dayId]);
+    }
+  };
+
   const numAmount = parseFloat(amount) || 0;
   const numRate = parseFloat(rate) || 0;
   const numDuration = parseInt(duration) || 1;
@@ -71,10 +98,19 @@ export function LoanSimulator() {
     totalInterest = numAmount * monthlyRate * numDuration;
     totalAmount = numAmount + totalInterest;
     installmentValue = totalAmount / numDuration;
-  } else {
-    // Para diário, vamos simplificar: a taxa informada é considerada mensal e dividida por 30
+  } else if (paymentFrequency === 'daily') {
     let dailyRate = (interestType === 'monthly' ? numRate : numRate / 12) / 30 / 100;
     totalInterest = numAmount * dailyRate * numDuration;
+    totalAmount = numAmount + totalInterest;
+    installmentValue = totalAmount / numDuration;
+  } else if (paymentFrequency === 'weekly') {
+    let weeklyRate = (interestType === 'monthly' ? numRate : numRate / 12) / 4 / 100;
+    totalInterest = numAmount * weeklyRate * numDuration;
+    totalAmount = numAmount + totalInterest;
+    installmentValue = totalAmount / numDuration;
+  } else if (paymentFrequency === 'biweekly') {
+    let biweeklyRate = (interestType === 'monthly' ? numRate : numRate / 12) / 2 / 100;
+    totalInterest = numAmount * biweeklyRate * numDuration;
     totalAmount = numAmount + totalInterest;
     installmentValue = totalAmount / numDuration;
   }
@@ -100,8 +136,13 @@ export function LoanSimulator() {
         interest_rate: numRate,
         interest_type: interestType,
         payment_frequency: paymentFrequency,
-        term_months: paymentFrequency === 'monthly' ? numDuration : Math.ceil(numDuration / 30),
-        term_days: paymentFrequency === 'daily' ? numDuration : numDuration * 30,
+        payment_days: paymentDays,
+        first_installment_date: firstInstallmentDate,
+        due_date: firstInstallmentDueDate,
+        category: category,
+        notes: notes,
+        term_months: paymentFrequency === 'monthly' ? numDuration : Math.ceil(numDuration / 4),
+        term_days: paymentFrequency === 'daily' ? numDuration : (paymentFrequency === 'weekly' ? numDuration * 7 : numDuration * 15),
         monthly_installment: installmentValue,
         total_repayment: totalAmount,
         status: 'active',
@@ -112,7 +153,17 @@ export function LoanSimulator() {
         legal_validation_status: 'not_validated',
         sent_to_client: true, // Simula o envio automático
         contract_content: await generateLoanContract(
-          { principal_amount: numAmount, interest_rate: numRate, interest_type: interestType, term_months: numDuration, monthly_installment: installmentValue, total_repayment: totalAmount, guarantee_info: hasGuarantee ? { type: guaranteeType, description: guaranteeDescription } : null },
+          { 
+            principal_amount: numAmount, 
+            interest_rate: numRate, 
+            interest_type: interestType, 
+            term_months: numDuration, 
+            monthly_installment: installmentValue, 
+            total_repayment: totalAmount,
+            payment_frequency: paymentFrequency,
+            category: category,
+            guarantee_info: hasGuarantee ? { type: guaranteeType, description: guaranteeDescription } : null 
+          },
           client,
           profile
         )
@@ -120,24 +171,38 @@ export function LoanSimulator() {
 
       if (loanError) throw loanError;
 
-      // 2. Cria todas as parcelas baseadas na frequência
+      // 2. Cria todas as parcelas baseadas na frequência e dias selecionados
       const installments = [];
-      let currentDate = new Date();
+      let currentDate = new Date(firstInstallmentDueDate);
+      let installmentsCreated = 0;
       
-      for (let i = 1; i <= numDuration; i++) {
-        let dueDate;
-        if (paymentFrequency === 'monthly') {
-          dueDate = new Date(currentDate.setMonth(currentDate.getMonth() + 1));
-        } else {
-          dueDate = new Date(currentDate.setDate(currentDate.getDate() + 1));
+      while (installmentsCreated < numDuration) {
+        let isPaymentDay = true;
+        if (paymentFrequency === 'daily' && paymentDays.length > 0) {
+          const dayName = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'][currentDate.getDay()];
+          isPaymentDay = paymentDays.includes(dayName);
         }
 
-        installments.push({
-          loan_id: loan.id,
-          amount: installmentValue,
-          due_date: dueDate.toISOString().split('T')[0],
-          status: 'upcoming'
-        });
+        if (isPaymentDay) {
+          installments.push({
+            loan_id: loan.id,
+            amount: installmentValue,
+            due_date: currentDate.toISOString().split('T')[0],
+            status: 'upcoming'
+          });
+          installmentsCreated++;
+        }
+
+        // Avança para o próximo intervalo. Diário avança 1 a 1, os outros pulam o ciclo cheio.
+        if (paymentFrequency === 'monthly') {
+          currentDate.setMonth(currentDate.getMonth() + 1);
+        } else if (paymentFrequency === 'daily') {
+          currentDate.setDate(currentDate.getDate() + 1);
+        } else if (paymentFrequency === 'weekly') {
+          currentDate.setDate(currentDate.getDate() + 7);
+        } else {
+          currentDate.setDate(currentDate.getDate() + 15);
+        }
       }
 
       const { error: instError } = await supabase.from('installments').insert(installments);
@@ -218,28 +283,102 @@ export function LoanSimulator() {
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="space-y-2">
               <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-4">Freq. Pagamento</label>
               <select value={paymentFrequency} onChange={(e: any) => setPaymentFrequency(e.target.value)} className="w-full bg-slate-50 border-none rounded-2xl px-6 py-4 text-sm font-bold focus:ring-2 focus:ring-emerald-100 outline-none appearance-none">
-                <option value="monthly">Mensal</option>
                 <option value="daily">Diário</option>
+                <option value="weekly">Semanal</option>
+                <option value="biweekly">Quinzenal</option>
+                <option value="monthly">Mensal</option>
               </select>
             </div>
 
             <div className="space-y-2">
-              <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-4">Prazo ({paymentFrequency === 'monthly' ? 'Meses' : 'Dias'})</label>
-              <div className="relative">
-                <Calendar className="absolute left-5 top-1/2 -translate-y-1/2 size-4 text-slate-300" />
-                <input 
-                  type="number" 
-                  value={duration || ''} 
-                  onFocus={(e) => e.target.select()}
-                  onChange={(e) => setDuration(e.target.value)} 
-                  className="w-full bg-slate-50 border-none rounded-2xl pl-12 pr-6 py-4 text-sm font-bold focus:ring-2 focus:ring-emerald-100 outline-none" 
-                />
+              <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-4">Categoria</label>
+              <select 
+                value={category} 
+                onChange={(e: any) => setCategory(e.target.value)} 
+                className="w-full bg-slate-50 border-none rounded-2xl px-6 py-4 text-sm font-bold focus:ring-2 focus:ring-emerald-100 outline-none appearance-none"
+              >
+                <option value="Microcrédito">Microcrédito</option>
+                <option value="Pessoal">Pessoal</option>
+                <option value="Comercial">Comercial</option>
+                <option value="Emergencial">Emergencial</option>
+                <option value="Educação">Educação</option>
+                <option value="Saúde">Saúde</option>
+                <option value="Outros">Outros</option>
+              </select>
+            </div>
+          </div>
+
+          {(paymentFrequency === 'daily' || paymentFrequency === 'weekly' || paymentFrequency === 'biweekly') && (
+            <div className="space-y-2 pt-2">
+              <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-4">Dias de Cobrança</label>
+              <div className="flex flex-wrap gap-2 px-2">
+                {weekDays.map((day) => (
+                  <button
+                    key={day.id}
+                    type="button"
+                    onClick={() => toggleDay(day.id)}
+                    className={cn(
+                      "size-10 rounded-xl text-[10px] font-black transition-all border-2",
+                      paymentDays.includes(day.id)
+                        ? "bg-emerald-500 border-emerald-500 text-white shadow-lg shadow-emerald-100"
+                        : "bg-white border-slate-100 text-slate-400 hover:border-emerald-200"
+                    )}
+                  >
+                    {day.label}
+                  </button>
+                ))}
               </div>
             </div>
+          )}
+
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-4">Data Início</label>
+              <input 
+                type="date" 
+                value={firstInstallmentDate} 
+                onChange={(e) => setFirstInstallmentDate(e.target.value)}
+                className="w-full bg-slate-50 border-none rounded-2xl px-6 py-4 text-sm font-bold focus:ring-2 focus:ring-emerald-100 outline-none" 
+              />
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-4">Venc. 1ª Parcela</label>
+              <input 
+                type="date" 
+                value={firstInstallmentDueDate} 
+                onChange={(e) => setFirstInstallmentDueDate(e.target.value)}
+                className="w-full bg-slate-50 border-none rounded-2xl px-6 py-4 text-sm font-bold focus:ring-2 focus:ring-emerald-100 outline-none" 
+              />
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-4">Prazo ({paymentFrequency === 'monthly' ? 'Meses' : (paymentFrequency === 'daily' ? 'Dias' : 'Parcelas')})</label>
+            <div className="relative">
+              <Calendar className="absolute left-5 top-1/2 -translate-y-1/2 size-4 text-slate-300" />
+              <input 
+                type="number" 
+                value={duration || ''} 
+                onFocus={(e) => e.target.select()}
+                onChange={(e) => setDuration(e.target.value)} 
+                className="w-full bg-slate-50 border-none rounded-2xl pl-12 pr-6 py-4 text-sm font-bold focus:ring-2 focus:ring-emerald-100 outline-none" 
+              />
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-4">Observações</label>
+            <textarea 
+              value={notes} 
+              onChange={(e) => setNotes(e.target.value)}
+              placeholder="Notas internas sobre este crédito..."
+              className="w-full bg-slate-50 border-none rounded-2xl px-6 py-4 text-sm font-bold focus:ring-2 focus:ring-emerald-100 outline-none min-h-[100px] resize-none" 
+            />
           </div>
  
            {/* Seção de Garantias (Opcional) */}

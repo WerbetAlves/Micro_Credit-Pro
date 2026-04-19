@@ -3,6 +3,7 @@ import { CheckCircle2, Circle, Wallet, Users, Calculator, ArrowRight } from 'luc
 import { motion } from 'motion/react';
 import { cn } from '../lib/utils';
 import { useNavigate } from 'react-router-dom';
+import { useLanguage } from '../contexts/LanguageContext';
 
 interface OnboardingChecklistProps {
   hasWallets: boolean;
@@ -12,37 +13,38 @@ interface OnboardingChecklistProps {
 
 export function OnboardingChecklist({ hasWallets, hasClients, hasLoans }: OnboardingChecklistProps) {
   const navigate = useNavigate();
+  const { t } = useLanguage();
   
   const steps = [
     {
       id: 'wallet',
-      title: 'Definir Capital Inicial',
-      description: 'Crie uma carteira e adicione o saldo que você tem disponível para emprestar.',
+      title: t.setInitialCapital,
+      description: t.walletStepDesc,
       icon: Wallet,
       completed: hasWallets,
       action: () => navigate('/financial'),
-      btnLabel: 'Criar Carteira'
+      btnLabel: t.createWallet
     },
     {
       id: 'client',
-      title: 'Cadastrar seu Primeiro Cliente',
-      description: 'Adicione as informações básicas de quem vai receber o crédito.',
+      title: t.registerFirstClient,
+      description: t.clientStepDesc,
       icon: Users,
       completed: hasClients,
       action: () => navigate('/clients'),
-      btnLabel: 'Cadastrar Cliente'
+      btnLabel: t.registerClient
     },
     {
       id: 'loan',
-      title: 'Realizar sua Primeira Operação',
-      description: 'Use o simulador para efetivar o empréstimo e gerar as parcelas.',
+      title: t.firstOperation,
+      description: t.loanStepDesc,
       icon: Calculator,
       completed: hasLoans,
       action: () => {
         const element = document.getElementById('issue-new-credit');
         if (element) element.scrollIntoView({ behavior: 'smooth', block: 'start' });
       },
-      btnLabel: 'Simular Agora'
+      btnLabel: t.simulateNow
     }
   ];
 
@@ -65,16 +67,16 @@ export function OnboardingChecklist({ hasWallets, hasClients, hasLoans }: Onboar
         <div className="space-y-2">
           <div className="inline-flex items-center gap-2 bg-emerald-50 text-emerald-600 px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-widest">
             <Zap className="size-3" />
-            Guia de Início Rápido
+            {t.quickStartGuide}
           </div>
-          <h2 className="text-2xl lg:text-3xl font-black text-slate-900">Prepare sua operação em 3 passos</h2>
+          <h2 className="text-2xl lg:text-3xl font-black text-slate-900">{t.prepareOperation}</h2>
           <p className="text-slate-500 font-medium max-w-lg">
-            Finalize a configuração inicial para começar a gerenciar seus empréstimos com inteligência.
+            {t.onboardingDescription}
           </p>
         </div>
 
         <div className="flex flex-col items-end gap-2">
-          <span className="text-sm font-bold text-slate-400">Progresso do Setup</span>
+          <span className="text-sm font-bold text-slate-400">{t.setupProgress}</span>
           <div className="w-48 h-2 bg-slate-100 rounded-full overflow-hidden">
             <motion.div 
               initial={{ width: 0 }}
@@ -82,7 +84,7 @@ export function OnboardingChecklist({ hasWallets, hasClients, hasLoans }: Onboar
               className="h-full bg-emerald-500"
             />
           </div>
-          <span className="text-xs font-black text-emerald-600 uppercase tracking-widest">{completedCount} de {steps.length} concluídos</span>
+          <span className="text-xs font-black text-emerald-600 uppercase tracking-widest">{t.stepsCompleted.replace('{completed}', completedCount.toString()).replace('{total}', steps.length.toString())}</span>
         </div>
       </div>
 
