@@ -28,11 +28,10 @@ export function Financial() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [loading, setLoading] = useState(true);
-  const [search, setSearch] = useState(''); // 🔥 Estado da pesquisa global
+  const [search, setSearch] = useState('');
   const [filterType, setFilterType] = useState<string>('all');
   const [filterCategory, setFilterCategory] = useState<string>('all');
 
-  // Modal State para Nova Transação
   const [isTxModalOpen, setIsTxModalOpen] = useState(false);
   const [txType, setTxType] = useState<'income' | 'expense'>('expense');
   const [txCategory, setTxCategory] = useState('other');
@@ -41,12 +40,13 @@ export function Financial() {
   const [txWalletId, setTxWalletId] = useState('');
   const [availableWallets, setAvailableWallets] = useState<{id: string, name: string}[]>([]);
 
-  // Stats
   const [stats, setStats] = useState({ balance: 0, inflow: 0, outflow: 0 });
 
   useEffect(() => {
-    fetchTransactions();
-    fetchWallets();
+    if (user) {
+      fetchTransactions();
+      fetchWallets();
+    }
   }, [user]);
 
   async function fetchWallets() {
@@ -55,7 +55,7 @@ export function Financial() {
       const { data } = await supabase.from('wallets').select('id, name').eq('user_id', user.id);
       if (data) setAvailableWallets(data);
     } catch (error) {
-      console.error('Error fetching wallets for selection:', error);
+      console.error('Error fetching wallets:', error);
     }
   }
 
@@ -75,7 +75,6 @@ export function Financial() {
         .order('created_at', { ascending: false });
 
       if (error) {
-        console.warn('Join with clients failed, fetching without relationship:', error.message);
         const { data: simpleData, error: simpleError } = await supabase
           .from('transactions')
           .select('*')
@@ -123,11 +122,10 @@ export function Financial() {
       fetchTransactions();
     } catch (error) {
       console.error('Erro ao adicionar transação:', (error as Error).message);
-      alert('Falha ao adicionar transação.');
+      alert('Falha ao adicionar transação. Verifique se o banco de dados foi atualizado.');
     }
   };
 
-  // 🔥 Filtro de transações unificado com a pesquisa do Header
   const filteredTransactions = useMemo(() => {
     return transactions.filter(tx => {
       const lowerSearch = search.toLowerCase();
@@ -139,25 +137,26 @@ export function Financial() {
     });
   }, [transactions, search, filterType, filterCategory]);
 
-  const chartData = Array.from({ length: 7 }).map((_, i) => {
-    const date = new Date();
-    date.setDate(date.getDate() - (6 - i));
-    const dateStr = date.toISOString().split('T')[0];
-    
-    const dayTxs = transactions.filter(t => t.created_at.startsWith(dateStr));
-    return {
-      name: date.toLocaleDateString([], { weekday: 'short' }),
-      income: dayTxs.filter(t => t.type === 'income').reduce((acc, t) => acc + Number(t.amount), 0),
-      expense: dayTxs.filter(t => t.type === 'expense').reduce((acc, t) => acc + Number(t.amount), 0)
-    };
-  });
+  const chartData = useMemo(() => {
+    return Array.from({ length: 7 }).map((_, i) => {
+      const date = new Date();
+      date.setDate(date.getDate() - (6 - i));
+      const dateStr = date.toISOString().split('T')[0];
+      
+      const dayTxs = transactions.filter(t => t.created_at.startsWith(dateStr));
+      return {
+        name: date.toLocaleDateString([], { weekday: 'short' }),
+        income: dayTxs.filter(t => t.type === 'income').reduce((acc, t) => acc + Number(t.amount), 0),
+        expense: dayTxs.filter(t => t.type === 'expense').reduce((acc, t) => acc + Number(t.amount), 0)
+      };
+    });
+  }, [transactions]);
 
   return (
     <div className="flex min-h-screen bg-[#f8fafc] overflow-x-hidden">
       <Sidebar isOpen={isSidebarOpen} onClose={() => setIsSidebarOpen(false)} />
 
       <main className="flex-1 lg:ml-72 min-h-screen pb-20 w-full transition-all duration-300">
-        {/* 🔥 Header agora recebe a pesquisa global */}
         <Header 
           title={t.financialOverview} 
           onMenuClick={() => setIsSidebarOpen(true)}
@@ -208,10 +207,9 @@ export function Financial() {
 
           <WalletManager />
           
-          {/* Chart Section */}
           <div className="bg-white rounded-[2.5rem] p-6 lg:p-10 border border-slate-50 shadow-sm">
             <div className="h-[300px] w-full">
-              {/* 🔥 Adicionado minWidth={0} para corrigir erro de redimensionamento do gráfico */}
+              {/* 🔥 FIX: Adicionado minWidth={0} para remover erro do console */}
               <ResponsiveContainer width="100%" height="100%" minWidth={0}>
                 <AreaChart data={chartData}>
                   <defs>
@@ -233,11 +231,9 @@ export function Financial() {
             </div>
           </div>
 
-          {/* Transactions List */}
           <div className="bg-white rounded-[2.5rem] border border-slate-50 shadow-sm overflow-hidden">
             <div className="p-6 lg:p-8 border-b border-slate-100 flex flex-col md:flex-row gap-4 items-center justify-between">
                <h3 className="text-lg font-bold text-slate-900">{t.allTransactions}</h3>
-               {/* 🔥 Barra de pesquisa redundante removida, agora unificada no Header */}
             </div>
 
             <div className="overflow-x-auto">
@@ -286,7 +282,6 @@ export function Financial() {
         </div>
       </main>
 
-      {/* Modal Nova Transação */}
       <AnimatePresence>
         {isTxModalOpen && (
           <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
