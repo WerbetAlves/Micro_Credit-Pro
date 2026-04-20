@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { 
   MessageSquare, 
-  Search, 
   Filter, 
   Plus, 
   Clock, 
@@ -39,20 +38,17 @@ interface SupportTicket {
 
 export function Support() {
   const { t, formatDate } = useLanguage();
-  // 🔥 Lemos o profile diretamente do contexto otimizado
   const { user, profile } = useAuth();
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [tickets, setTickets] = useState<SupportTicket[]>([]);
   const [loading, setLoading] = useState(true);
-  const [search, setSearch] = useState('');
+  const [search, setSearch] = useState(''); // 🔥 Estado da pesquisa controlado pelo Header
   const [filterStatus, setFilterStatus] = useState<string>('all');
   
-  // Modal states
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [formLoading, setFormLoading] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
 
-  // 🔥 Tipagem correta para informar ao TypeScript que estes campos aceitam várias opções
   const [formData, setFormData] = useState<{
     subject: string;
     description: string;
@@ -75,7 +71,6 @@ export function Support() {
     if (!user) return;
     setLoading(true);
     try {
-      // Usamos o profile que já está na memória global (instantâneo!)
       const isAdmin = profile?.is_admin || false;
       
       let query = supabase
@@ -148,8 +143,10 @@ export function Support() {
   };
 
   const filteredTickets = tickets.filter(t => {
-    const matchesSearch = t.subject.toLowerCase().includes(search.toLowerCase()) || 
-                          t.description.toLowerCase().includes(search.toLowerCase());
+    const lowerSearch = search.toLowerCase();
+    const matchesSearch = t.subject.toLowerCase().includes(lowerSearch) || 
+                          t.description.toLowerCase().includes(lowerSearch) ||
+                          t.id.toLowerCase().includes(lowerSearch);
     const matchesStatus = filterStatus === 'all' || t.status === filterStatus;
     return matchesSearch && matchesStatus;
   });
@@ -178,7 +175,14 @@ export function Support() {
       <Sidebar isOpen={isSidebarOpen} onClose={() => setIsSidebarOpen(false)} />
 
       <main className="flex-1 lg:ml-72 min-h-screen pb-20 w-full transition-all duration-300">
-        <Header title={t.supportCenter} onMenuClick={() => setIsSidebarOpen(true)}>
+        {/* 🔥 Header agora recebe as props da pesquisa global */}
+        <Header 
+          title={t.supportCenter} 
+          onMenuClick={() => setIsSidebarOpen(true)}
+          searchValue={search}
+          onSearchChange={setSearch}
+          searchPlaceholder={t.searchTickets}
+        >
           <button 
             onClick={() => setIsModalOpen(true)}
             className="flex items-center gap-2 bg-emerald-500 text-white px-4 py-2.5 rounded-2xl font-bold text-xs uppercase tracking-widest shadow-lg shadow-emerald-200 hover:bg-emerald-600 transition-all active:scale-95"
@@ -188,7 +192,7 @@ export function Support() {
           </button>
         </Header>
 
-        <div className="px-4 lg:px-8 py-8 w-full">
+        <div className="px-4 lg:px-8 py-8 w-full max-w-[1600px] mx-auto">
           {/* AI Banner */}
           <section className="mb-10">
             <div className="bg-slate-900 rounded-[2.5rem] p-8 lg:p-12 text-white relative overflow-hidden shadow-2xl">
@@ -244,18 +248,9 @@ export function Support() {
             </div>
           </section>
 
-          {/* Search and Filters */}
-          <div className="flex flex-col sm:flex-row gap-4 mb-8">
-            <div className="flex-1 relative">
-              <Search className="absolute left-4 top-1/2 -translate-y-1/2 size-5 text-slate-300" />
-              <input 
-                type="text" 
-                placeholder={t.searchTickets || 'Buscar tickets...'} 
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                className="w-full pl-12 pr-4 py-4 bg-white border border-slate-100 rounded-[1.5rem] shadow-sm focus:ring-2 focus:ring-emerald-100 outline-none transition-all text-sm font-medium text-slate-600"
-              />
-            </div>
+          {/* Filters Bar */}
+          <div className="flex flex-col sm:flex-row gap-4 mb-8 justify-end">
+            {/* 🔥 A barra de pesquisa antiga foi removida daqui, agora está no Header */}
             <div className="flex items-center gap-2 bg-white px-4 py-2 border border-slate-100 rounded-[1.5rem] shadow-sm">
                 <Filter className="size-4 text-slate-400" />
                 <select 
@@ -283,14 +278,16 @@ export function Support() {
               <div className="w-16 h-16 bg-slate-50 rounded-2xl flex items-center justify-center mx-auto mb-4 text-slate-300">
                 <MessageSquare className="size-8" />
               </div>
-              <h3 className="text-lg font-bold text-slate-900 mb-2">{t.noTickets || 'Sem tickets'}</h3>
+              <h3 className="text-lg font-bold text-slate-900 mb-2">{search ? 'Nenhum ticket encontrado' : (t.noTickets || 'Sem tickets')}</h3>
               <p className="text-sm text-slate-400 max-w-xs mx-auto mb-6">{t.noTicketsDescription || 'Você não tem nenhum ticket de suporte no momento.'}</p>
-              <button 
-                onClick={() => setIsModalOpen(true)}
-                className="bg-emerald-50 text-emerald-600 px-6 py-3 rounded-xl font-black text-xs uppercase tracking-widest hover:bg-emerald-100 transition-all active:scale-95"
-              >
-                {t.openFirstTicket || 'Abrir primeiro ticket'}
-              </button>
+              {!search && (
+                <button 
+                  onClick={() => setIsModalOpen(true)}
+                  className="bg-emerald-50 text-emerald-600 px-6 py-3 rounded-xl font-black text-xs uppercase tracking-widest hover:bg-emerald-100 transition-all active:scale-95"
+                >
+                  {t.openFirstTicket || 'Abrir primeiro ticket'}
+                </button>
+              )}
             </div>
           ) : (
             <div className="grid grid-cols-1 gap-4">
@@ -345,7 +342,6 @@ export function Support() {
                         </span>
                       </div>
                       
-                      {/* Admin Controls limpos! Usamos o profile.is_admin diretamente */}
                       {profile?.is_admin && (
                         <div className="flex gap-2">
                            {ticket.status === 'open' && (
@@ -485,9 +481,9 @@ export function Support() {
           )}
         </AnimatePresence>
         
-        {/* Floating AI Assistant */}
+        {/* Assistente de IA flutuante (Oculto pois é acionado via banner) */}
         <div className="hidden">
-           <AIAssistantDashboard />
+            <AIAssistantDashboard />
         </div>
       </main>
     </div>

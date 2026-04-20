@@ -1,6 +1,7 @@
-import React, { useState, useEffect } from 'react';
-import { Search, Landmark, Wallet, Plus, ArrowUpRight, ArrowDownRight, X } from 'lucide-react';
+import React, { useState, useEffect, useMemo } from 'react';
+import { Landmark, Wallet, Plus, ArrowUpRight, ArrowDownRight, X } from 'lucide-react';
 import { Sidebar } from '../components/Sidebar';
+import { Header } from '../components/Header';
 import { WalletManager } from '../components/WalletManager';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useAuth } from '../contexts/AuthContext';
@@ -27,7 +28,7 @@ export function Financial() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [loading, setLoading] = useState(true);
-  const [search, setSearch] = useState('');
+  const [search, setSearch] = useState(''); // 🔥 Estado da pesquisa global
   const [filterType, setFilterType] = useState<string>('all');
   const [filterCategory, setFilterCategory] = useState<string>('all');
 
@@ -62,7 +63,6 @@ export function Financial() {
     if (!user) return;
     setLoading(true);
     try {
-      // 1. Primeiro tenta buscar com o join de clientes
       const { data, error } = await supabase
         .from('transactions')
         .select(`
@@ -75,7 +75,6 @@ export function Financial() {
         .order('created_at', { ascending: false });
 
       if (error) {
-        // Fallback: se o join falhar (ex: coluna faltando), busca sem o join
         console.warn('Join with clients failed, fetching without relationship:', error.message);
         const { data: simpleData, error: simpleError } = await supabase
           .from('transactions')
@@ -121,20 +120,24 @@ export function Financial() {
       setTxAmount('');
       setTxDescription('');
       setTxWalletId('');
-      fetchTransactions(); // Atualiza a lista e os gráficos
+      fetchTransactions();
     } catch (error) {
       console.error('Erro ao adicionar transação:', (error as Error).message);
       alert('Falha ao adicionar transação.');
     }
   };
 
-  const filteredTransactions = transactions.filter(tx => {
-    const matchesSearch = tx.description?.toLowerCase().includes(search.toLowerCase()) || 
-                          tx.clients?.full_name?.toLowerCase().includes(search.toLowerCase());
-    const matchesType = filterType === 'all' || tx.type === filterType;
-    const matchesCategory = filterCategory === 'all' || tx.category === filterCategory;
-    return matchesSearch && matchesType && matchesCategory;
-  });
+  // 🔥 Filtro de transações unificado com a pesquisa do Header
+  const filteredTransactions = useMemo(() => {
+    return transactions.filter(tx => {
+      const lowerSearch = search.toLowerCase();
+      const matchesSearch = tx.description?.toLowerCase().includes(lowerSearch) || 
+                            tx.clients?.full_name?.toLowerCase().includes(lowerSearch);
+      const matchesType = filterType === 'all' || tx.type === filterType;
+      const matchesCategory = filterCategory === 'all' || tx.category === filterCategory;
+      return matchesSearch && matchesType && matchesCategory;
+    });
+  }, [transactions, search, filterType, filterCategory]);
 
   const chartData = Array.from({ length: 7 }).map((_, i) => {
     const date = new Date();
@@ -154,24 +157,24 @@ export function Financial() {
       <Sidebar isOpen={isSidebarOpen} onClose={() => setIsSidebarOpen(false)} />
 
       <main className="flex-1 lg:ml-72 min-h-screen pb-20 w-full transition-all duration-300">
-        <header className="sticky top-0 z-40 bg-white/80 backdrop-blur-xl border-b border-slate-100 flex items-center justify-between px-4 lg:px-8 py-4 lg:py-5">
-          <div className="flex items-center gap-4">
-            <button onClick={() => setIsSidebarOpen(true)} className="lg:hidden p-2 text-slate-500">
-              <Landmark className="size-6" />
-            </button>
-            <h1 className="text-lg lg:text-xl font-bold tracking-tight text-slate-900 truncate">{t.financialOverview}</h1>
-          </div>
-              {/* Botão de Adicionar Transação no Topo */}
+        {/* 🔥 Header agora recebe a pesquisa global */}
+        <Header 
+          title={t.financialOverview} 
+          onMenuClick={() => setIsSidebarOpen(true)}
+          searchValue={search}
+          onSearchChange={setSearch}
+          searchPlaceholder={t.search}
+        >
           <button 
             onClick={() => setIsTxModalOpen(true)}
-            className="flex items-center gap-2 bg-emerald-600 text-white px-4 py-2 rounded-xl text-xs font-bold uppercase tracking-widest hover:bg-emerald-700 transition-colors shadow-lg shadow-emerald-200"
+            className="flex items-center gap-2 bg-emerald-600 text-white px-4 py-2.5 rounded-xl text-xs font-bold uppercase tracking-widest hover:bg-emerald-700 transition-colors shadow-lg shadow-emerald-200"
           >
             <Plus className="size-4" />
             <span className="hidden sm:inline">{t.newTransaction}</span>
           </button>
-        </header>
+        </Header>
 
-        <div className="px-4 lg:px-8 py-8 w-full transition-all space-y-8">
+        <div className="px-4 lg:px-8 py-8 w-full transition-all space-y-8 max-w-[1600px] mx-auto">
           
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             <motion.div className="bg-slate-900 rounded-[2rem] p-8 text-white shadow-xl shadow-slate-200 relative overflow-hidden">
@@ -208,7 +211,8 @@ export function Financial() {
           {/* Chart Section */}
           <div className="bg-white rounded-[2.5rem] p-6 lg:p-10 border border-slate-50 shadow-sm">
             <div className="h-[300px] w-full">
-              <ResponsiveContainer width="100%" height="100%">
+              {/* 🔥 Adicionado minWidth={0} para corrigir erro de redimensionamento do gráfico */}
+              <ResponsiveContainer width="100%" height="100%" minWidth={0}>
                 <AreaChart data={chartData}>
                   <defs>
                     <linearGradient id="colorIncome" x1="0" y1="0" x2="0" y2="1">
@@ -233,15 +237,7 @@ export function Financial() {
           <div className="bg-white rounded-[2.5rem] border border-slate-50 shadow-sm overflow-hidden">
             <div className="p-6 lg:p-8 border-b border-slate-100 flex flex-col md:flex-row gap-4 items-center justify-between">
                <h3 className="text-lg font-bold text-slate-900">{t.allTransactions}</h3>
-               <div className="flex flex-wrap items-center gap-3 w-full md:w-auto">
-                 <div className="relative flex-1 md:w-64">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-slate-300" />
-                    <input 
-                      type="text" placeholder={t.searchClients} value={search} onChange={e => setSearch(e.target.value)}
-                      className="w-full pl-10 pr-4 py-2 bg-slate-50 border-none rounded-xl text-xs font-medium focus:ring-2 focus:ring-emerald-100 outline-none"
-                    />
-                 </div>
-               </div>
+               {/* 🔥 Barra de pesquisa redundante removida, agora unificada no Header */}
             </div>
 
             <div className="overflow-x-auto">
@@ -270,10 +266,11 @@ export function Financial() {
                             </div>
                             <div>
                               <p className="text-xs font-bold text-slate-900 leading-tight">{tx.description || tx.category}</p>
+                              {tx.clients && <p className="text-[9px] text-slate-400 font-bold uppercase">{tx.clients.full_name}</p>}
                             </div>
                           </div>
                         </td>
-                        <td className="px-6 py-5"><span className="text-[10px] font-black text-slate-400 uppercase tracking-[0.15em] bg-slate-50 px-2 py-1 rounded-md">{t[tx.category] || tx.category}</span></td>
+                        <td className="px-6 py-5"><span className="text-[10px] font-black text-slate-400 uppercase tracking-[0.15em] bg-slate-50 px-2 py-1 rounded-md">{t[tx.category as keyof typeof t] || tx.category}</span></td>
                         <td className="px-6 py-5 text-right">
                           <span className={cn("text-sm font-black tracking-tighter", tx.type === 'income' ? "text-emerald-600" : "text-slate-900")}>
                             {tx.type === 'income' ? '+' : '-'} {formatCurrency(tx.amount)}

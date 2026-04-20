@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { CreditCard, Shield, Zap, Check, Star, Settings as SettingsIcon, FileText, Plus, Trash2, Camera, MapPin, Phone, AlertCircle, Download, Upload } from 'lucide-react';
 import { Sidebar } from '../components/Sidebar';
 import { Header } from '../components/Header';
@@ -39,8 +39,8 @@ export function Settings() {
   const location = useLocation();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [search, setSearch] = useState(''); // 🔥 Estado da pesquisa global
   
-  // Use state from navigation or default to 'profile'
   const locationState = location.state as LocationState | null;
   const initialTab = locationState?.activeTab || 'profile';
   const [activeTab, setActiveTab] = useState<'profile' | 'billing' | 'payments' | 'privacy'>(initialTab);
@@ -60,28 +60,23 @@ export function Settings() {
     if (data) setProfile(data as Profile);
   }
 
-  // 🔥 NOVA FUNÇÃO: Faz o upload da foto de perfil para o Supabase Storage
   const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || !user) return;
 
     setIsUploadingAvatar(true);
     try {
-      // Cria um nome único para o ficheiro
       const fileExt = file.name.split('.').pop();
       const fileName = `${user.id}-${Math.random()}.${fileExt}`;
 
-      // Faz o upload para o bucket 'avatars'
       const { error: uploadError } = await supabase.storage
         .from('avatars')
         .upload(fileName, file);
 
       if (uploadError) throw uploadError;
 
-      // Pega a URL pública da imagem recém-enviada
       const { data } = supabase.storage.from('avatars').getPublicUrl(fileName);
 
-      // Atualiza o perfil do utilizador com a nova URL
       const { error: updateError } = await supabase
         .from('profiles')
         .update({ avatar_url: data.publicUrl })
@@ -96,7 +91,6 @@ export function Settings() {
       alert('Erro ao enviar imagem. Verifique se criou o bucket "avatars" público no Supabase.');
     } finally {
       setIsUploadingAvatar(false);
-      // Limpa o input para permitir selecionar o mesmo ficheiro novamente se necessário
       if (fileInputRef.current) fileInputRef.current.value = '';
     }
   };
@@ -128,8 +122,6 @@ export function Settings() {
   const handleUpgrade = async (plan: string) => {
     if (!user || isUpdating) return;
     setIsUpdating(true);
-    
-    // Simulando tempo de processamento de pagamento
     await new Promise(r => setTimeout(r, 1500));
     
     try {
@@ -183,11 +175,9 @@ export function Settings() {
     setIsUpdating(true);
     try {
       const tables = ['installments', 'loans', 'clients', 'transactions', 'notifications', 'support_tickets'];
-      
       for (const table of tables) {
         await supabase.from(table).delete().eq('user_id', user.id);
       }
-      
       alert(t.deleteDataSuccess);
     } catch (error) {
       console.error("Delete data error:", error);
@@ -204,7 +194,6 @@ export function Settings() {
 
     setIsUpdating(true);
     try {
-      // 1. Delete all data
       const tables = ['installments', 'loans', 'clients', 'transactions', 'notifications', 'support_tickets', 'wallets', 'profiles'];
       for (const table of tables) {
         if (table === 'profiles') {
@@ -213,8 +202,6 @@ export function Settings() {
           await supabase.from(table).delete().eq('user_id', user.id);
         }
       }
-
-      // 2. Sign Out
       alert(t.deleteAccountSuccess);
       signOut();
     } catch (error) {
@@ -324,12 +311,30 @@ export function Settings() {
     }
   ];
 
+  // 🔥 Filtra os planos baseando-se no termo de pesquisa
+  const filteredPlans = useMemo(() => {
+    if (!search) return plans;
+    const lowerSearch = search.toLowerCase();
+    return plans.filter(plan => 
+      plan.name.toLowerCase().includes(lowerSearch) || 
+      plan.description.toLowerCase().includes(lowerSearch) ||
+      plan.features.some(f => f.toLowerCase().includes(lowerSearch))
+    );
+  }, [search]);
+
   return (
     <div className="flex min-h-screen bg-[#f8fafc]">
       <Sidebar isOpen={isSidebarOpen} onClose={() => setIsSidebarOpen(false)} />
 
       <main className="flex-1 lg:ml-72 min-h-screen pb-20 transition-all duration-300">
-        <Header title={t.settings} onMenuClick={() => setIsSidebarOpen(true)} />
+        {/* 🔥 Header agora recebe as props da pesquisa global */}
+        <Header 
+          title={t.settings} 
+          onMenuClick={() => setIsSidebarOpen(true)}
+          searchValue={search}
+          onSearchChange={setSearch}
+          searchPlaceholder={t.search} 
+        />
 
         <div className="px-4 md:px-6 lg:px-8 py-8 max-w-6xl mx-auto space-y-8">
           <div className="flex flex-wrap gap-2 p-1.5 bg-white border border-slate-200 rounded-2xl w-fit">
@@ -384,7 +389,6 @@ export function Settings() {
                 exit={{ opacity: 0, scale: 0.98 }}
                 className="grid grid-cols-1 lg:grid-cols-3 gap-8"
               >
-                {/* Personal Info & Docs */}
                 <div className="lg:col-span-2 space-y-6">
                   <div className="bg-white border border-slate-200 rounded-[2.5rem] p-8 lg:p-12 shadow-sm space-y-10">
                     <div className="flex flex-col sm:flex-row sm:items-center gap-6 pb-2 border-b border-slate-50">
@@ -392,7 +396,7 @@ export function Settings() {
                       <div className="relative group">
                         <div className="size-24 rounded-[2rem] bg-emerald-50 flex items-center justify-center text-emerald-600 overflow-hidden border-4 border-slate-50">
                           {profile?.avatar_url ? (
-                            <img src={profile.avatar_url} className="size-full object-cover" referrerPolicy="no-referrer" />
+                            <img src={profile.avatar_url} className="size-full object-cover" referrerPolicy="no-referrer" alt="Avatar" />
                           ) : (
                             <Camera className="size-10 opacity-20" />
                           )}
@@ -488,7 +492,6 @@ export function Settings() {
                   </div>
                 </div>
 
-                {/* Account Status Sidebar */}
                 <div className="space-y-6">
                   <div className="bg-emerald-600 rounded-[2.5rem] p-8 text-white space-y-6 shadow-xl shadow-emerald-100">
                     <div className="space-y-1">
@@ -593,7 +596,6 @@ export function Settings() {
                     <p className="text-sm font-medium text-slate-500">Manage your data and account privacy settings.</p>
                   </div>
 
-                  {/* Backup & Restore */}
                   <div className="p-8 bg-emerald-50/30 rounded-[2rem] border border-emerald-100/50 space-y-6">
                     <div className="flex items-center gap-3">
                       <div className="p-3 bg-emerald-100 text-emerald-600 rounded-2xl">
@@ -697,6 +699,7 @@ export function Settings() {
                 </div>
               </motion.div>
             )}
+
             {activeTab === 'billing' && (
               <motion.div
                 key="billing"
@@ -711,9 +714,8 @@ export function Settings() {
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6 lg:gap-8">
-                  {plans.map((plan) => {
+                  {filteredPlans.map((plan) => {
                     const isCurrent = (profile?.plan_type || 'free') === plan.id;
-                    
                     return (
                       <div 
                         key={plan.name}
@@ -774,7 +776,6 @@ export function Settings() {
                   })}
                 </div>
 
-                {/* Additional Billing Info */}
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 pt-8 border-t border-slate-200">
                   <div className="space-y-6">
                     <h4 className="text-lg font-black text-slate-900 flex items-center gap-2">
@@ -821,13 +822,6 @@ export function Settings() {
                             <td className="px-6 py-4 text-sm font-bold text-slate-700">R$ {profile?.plan_type === 'pro' ? '49,90' : profile?.plan_type === 'enterprise' ? '199,00' : '0,00'}</td>
                             <td className="px-6 py-4 text-right">
                               <button className="text-emerald-600 hover:text-emerald-700 font-bold text-xs uppercase tracking-widest">Baixar PDF</button>
-                            </td>
-                          </tr>
-                          <tr className="hover:bg-slate-50/50 transition-colors">
-                            <td className="px-6 py-4 text-sm font-bold text-slate-500">18 Mar, 2026</td>
-                            <td className="px-6 py-4 text-sm font-bold text-slate-500">R$ 0,00</td>
-                            <td className="px-6 py-4 text-right">
-                              <button className="text-slate-400 hover:text-slate-600 font-bold text-xs uppercase tracking-widest">Recibo</button>
                             </td>
                           </tr>
                         </tbody>

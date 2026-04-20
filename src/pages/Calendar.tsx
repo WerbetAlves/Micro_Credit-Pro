@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { ChevronLeft, ChevronRight, Calendar as CalendarIcon, Clock, User, DollarSign, TrendingUp } from 'lucide-react';
 import { Sidebar } from '../components/Sidebar';
 import { Header } from '../components/Header';
@@ -21,7 +21,6 @@ import { ptBR, enUS } from 'date-fns/locale';
 import { cn } from '../lib/utils';
 import { motion } from 'motion/react';
 
-// 🔥 1. Adicionada Tipagem Forte para as Parcelas e Clientes
 interface Installment {
   id: string;
   loan_id: string;
@@ -41,11 +40,10 @@ export function Calendar() {
   const { user } = useAuth();
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [currentDate, setCurrentDate] = useState(new Date());
+  const [search, setSearch] = useState(''); // 🔥 Estado da pesquisa
   
-  // 🔥 Aplicada a tipagem em vez de "any"
   const [installments, setInstallments] = useState<Installment[]>([]);
-  const [selectedDayInstallments, setSelectedDayInstallments] = useState<Installment[]>([]);
-  const [selectedDay, setSelectedDay] = useState<Date | null>(null);
+  const [selectedDay, setSelectedDay] = useState<Date | null>(new Date()); // Inicia com hoje selecionado
 
   const loc = language === 'pt' ? ptBR : enUS;
 
@@ -64,13 +62,25 @@ export function Calendar() {
         .eq('loans.user_id', user.id);
         
       if (error) throw error;
-      
-      // 🔥 2. Coerção segura para resolver o formato de Join do Supabase
       if (data) setInstallments(data as any as Installment[]);
     } catch (err: any) {
       console.error('Error fetching calendar installments:', err.message);
     }
   }
+
+  // Helper para lidar com a formatação do nome com segurança
+  const getClientName = (inst: Installment) => {
+    const loan: any = Array.isArray(inst.loans) ? inst.loans[0] : inst.loans;
+    return loan?.clients?.full_name || (Array.isArray(loan?.clients) ? loan?.clients[0]?.full_name : 'Cliente');
+  };
+
+  // 🔥 Filtro global baseado na pesquisa (nome do cliente)
+  const filteredInstallments = useMemo(() => {
+    if (!search) return installments;
+    return installments.filter(inst => 
+      getClientName(inst).toLowerCase().includes(search.toLowerCase())
+    );
+  }, [installments, search]);
 
   const handlePrevMonth = () => setCurrentDate(subMonths(currentDate, 1));
   const handleNextMonth = () => setCurrentDate(addMonths(currentDate, 1));
@@ -83,28 +93,25 @@ export function Calendar() {
   const calendarDays = eachDayOfInterval({ start: startDate, end: endDate });
 
   const getDayInstallments = (day: Date) => {
-    return installments.filter(inst => isSameDay(new Date(inst.due_date), day));
+    return filteredInstallments.filter(inst => isSameDay(new Date(inst.due_date), day));
   };
 
-  const handleDayClick = (day: Date) => {
-    const dayInsts = getDayInstallments(day);
-    setSelectedDay(day);
-    setSelectedDayInstallments(dayInsts);
-  };
-
-  // Helper para lidar com a formatação do nome com segurança
-  const getClientName = (inst: Installment) => {
-    // Trata do facto do Supabase por vezes devolver listas em joins aninhados
-    const loan: any = Array.isArray(inst.loans) ? inst.loans[0] : inst.loans;
-    return loan?.clients?.full_name || (Array.isArray(loan?.clients) ? loan?.clients[0]?.full_name : 'Cliente');
-  };
+  // Parcelas para exibir na barra lateral (do dia selecionado + filtradas)
+  const selectedDayInstallments = selectedDay ? getDayInstallments(selectedDay) : [];
 
   return (
     <div className="flex min-h-screen bg-[#f8fafc] overflow-x-hidden">
       <Sidebar isOpen={isSidebarOpen} onClose={() => setIsSidebarOpen(false)} />
 
       <main className="flex-1 lg:ml-72 min-h-screen pb-20 w-full transition-all duration-300">
-        <Header title={t.calendar} onMenuClick={() => setIsSidebarOpen(true)} />
+        {/* 🔥 Header conectado à pesquisa */}
+        <Header 
+          title={t.calendar} 
+          onMenuClick={() => setIsSidebarOpen(true)}
+          searchValue={search}
+          onSearchChange={setSearch}
+          searchPlaceholder={t.searchClients}
+        />
 
         <div className="px-4 lg:px-8 py-8 w-full max-w-[1600px] mx-auto space-y-8">
           <div className="grid grid-cols-1 xl:grid-cols-3 gap-8">
@@ -124,7 +131,7 @@ export function Calendar() {
                   <button onClick={handlePrevMonth} className="p-3 hover:bg-slate-50 rounded-2xl text-slate-400 transition-all border border-slate-100 shadow-sm">
                     <ChevronLeft className="size-5" />
                   </button>
-                  <button onClick={() => setCurrentDate(new Date())} className="px-5 py-3 hover:bg-slate-50 rounded-2xl text-[10px] font-black uppercase tracking-widest text-slate-600 transition-all border border-slate-100 shadow-sm">
+                  <button onClick={() => { setCurrentDate(new Date()); setSelectedDay(new Date()); }} className="px-5 py-3 hover:bg-slate-50 rounded-2xl text-[10px] font-black uppercase tracking-widest text-slate-600 transition-all border border-slate-100 shadow-sm">
                     {t.today || 'Hoje'}
                   </button>
                   <button onClick={handleNextMonth} className="p-3 hover:bg-slate-50 rounded-2xl text-slate-400 transition-all border border-slate-100 shadow-sm">
@@ -133,7 +140,6 @@ export function Calendar() {
                 </div>
               </div>
 
-              {/* Days Header */}
               <div className="grid grid-cols-7 mb-4">
                 {['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sab'].map(d => (
                   <div key={d} className="text-center text-[10px] font-black uppercase tracking-widest text-slate-400 py-3">
@@ -142,7 +148,6 @@ export function Calendar() {
                 ))}
               </div>
 
-              {/* Grid Days */}
               <div className="grid grid-cols-7 gap-px bg-slate-100 border border-slate-100 rounded-3xl overflow-hidden shadow-inner">
                 {calendarDays.map((day, idx) => {
                   const dayInsts = getDayInstallments(day);
@@ -153,7 +158,7 @@ export function Calendar() {
                   return (
                     <div 
                       key={idx}
-                      onClick={() => handleDayClick(day)}
+                      onClick={() => setSelectedDay(day)}
                       className={cn(
                         "min-h-[100px] lg:min-h-[140px] p-3 transition-all cursor-pointer relative",
                         isCurrentMonth ? "bg-white" : "bg-slate-50/50 grayscale opacity-40",
@@ -210,7 +215,7 @@ export function Calendar() {
                         initial={{ opacity: 0, x: 20 }}
                         animate={{ opacity: 1, x: 0 }}
                         transition={{ delay: idx * 0.1 }}
-                        key={idx} 
+                        key={inst.id} 
                         className="bg-white/5 backdrop-blur-sm border border-white/10 p-5 rounded-3xl hover:bg-white/10 transition-all group"
                       >
                         <div className="flex justify-between items-start mb-4">
@@ -232,13 +237,13 @@ export function Calendar() {
                         </div>
                         
                         <div className="flex items-center justify-between pt-4 border-t border-white/5">
-                           <div className="flex items-center gap-1.5">
+                            <div className="flex items-center gap-1.5">
                               <DollarSign className="size-3 text-emerald-500" />
                               <span className="text-sm font-black text-white">{formatCurrency(inst.amount)}</span>
-                           </div>
-                           <button className="text-[10px] font-black uppercase tracking-[0.2em] text-emerald-400 hover:text-emerald-300 transition-all">
-                             {t.notify || 'Notificar'}
-                           </button>
+                            </div>
+                            <button className="text-[10px] font-black uppercase tracking-[0.2em] text-emerald-400 hover:text-emerald-300 transition-all">
+                              {t.notify || 'Notificar'}
+                            </button>
                         </div>
                       </motion.div>
                     ))
@@ -247,20 +252,23 @@ export function Calendar() {
                       <div className="size-16 bg-white/5 rounded-[2rem] flex items-center justify-center mx-auto">
                         <CalendarIcon className="size-8" />
                       </div>
-                      <p className="text-xs font-bold text-slate-400 uppercase tracking-[0.2em]">{t.noReceiptsToday || 'Sem recebimentos'}</p>
+                      <p className="text-xs font-bold text-slate-400 uppercase tracking-[0.2em]">
+                        {search ? 'Nenhum resultado' : (t.noReceiptsToday || 'Sem recebimentos')}
+                      </p>
                     </div>
                   )}
                 </div>
               </div>
 
-              {/* Summary Stats */}
               <div className="bg-white rounded-[2.5rem] p-8 border border-slate-50 shadow-sm space-y-6">
                  <h4 className="text-sm font-black uppercase tracking-[0.2em] text-slate-400">{t.monthSummary || 'Resumo do Mês'}</h4>
                  <div className="grid grid-cols-1 gap-4">
                     <div className="bg-slate-50 p-6 rounded-3xl flex justify-between items-center">
                        <div>
                           <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">{t.totalToReceive || 'A Receber'}</p>
-                          <p className="text-xl font-black text-slate-900">{formatCurrency(installments.filter(i => isSameMonth(new Date(i.due_date), currentDate)).reduce((acc, curr) => acc + curr.amount, 0))}</p>
+                          <p className="text-xl font-black text-slate-900">
+                            {formatCurrency(filteredInstallments.filter(i => isSameMonth(new Date(i.due_date), currentDate)).reduce((acc, curr) => acc + curr.amount, 0))}
+                          </p>
                        </div>
                        <TrendingUp className="size-8 text-emerald-500 opacity-20" />
                     </div>
