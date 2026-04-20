@@ -2,7 +2,6 @@ import React, { createContext, useContext, useEffect, useState, ReactNode } from
 import { User, Session } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
 
-// 1. Tipagem Exata do seu SaaS (Acabamos com o 'any'!)
 export interface Profile {
   id: string;
   full_name: string | null;
@@ -10,7 +9,6 @@ export interface Profile {
   avatar_url: string | null;
   is_admin: boolean;
   plan_type: 'free' | 'pro' | 'enterprise';
-  created_at?: string;
 }
 
 interface AuthContextType {
@@ -30,63 +28,64 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
 
-  // Função para buscar o perfil na base de dados
   async function fetchProfile(userId: string) {
     try {
       const { data, error } = await supabase
         .from('profiles')
         .select('*')
         .eq('id', userId)
-        .single();
+        .maybeSingle(); // Usamos maybeSingle para não estourar erro se não achar
         
       if (error) throw error;
       setProfile(data as Profile);
     } catch (error) {
-      console.error('Erro ao buscar o perfil do utilizador:', error);
+      console.error('Erro ao buscar perfil:', error);
       setProfile(null);
     }
   }
 
   useEffect(() => {
-    let mounted = true; // Previne atualizações se o componente for desmontado
+    let mounted = true;
 
-    async function initializeAuth() {
+    async function getInitialSession() {
       try {
-        const { data: { session }, error } = await supabase.auth.getSession();
-        if (error) throw error;
-
+        const { data: { session } } = await supabase.auth.getSession();
         if (mounted) {
           setSession(session);
           setUser(session?.user ?? null);
-          
           if (session?.user) {
             await fetchProfile(session.user.id);
           }
         }
       } catch (error) {
-        console.error('Erro inicial ao buscar a sessão:', error);
+        console.error("Auth init error:", error);
       } finally {
-        if (mounted) setLoading(false);
+        if (mounted) setLoading(false); // 🔥 GARANTE que o loading acaba
       }
     }
 
-    initializeAuth();
+    getInitialSession();
 
-    // Ouve as mudanças de login/logout
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
-      if (mounted) {
-        setSession(session);
-        setUser(session?.user ?? null);
-        
-        // 2. Correção de Sincronia: Agora esperamos o perfil carregar ANTES de tirar o loading
-        if (session?.user) {
-          await fetchProfile(session.user.id);
-        } else {
-          setProfile(null);
-        }
-        
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      if (!mounted) return;
+
+      // Se o evento for de saída, limpamos tudo e paramos o loading
+      if (event === 'SIGNED_OUT') {
+        setUser(null);
+        setSession(null);
+        setProfile(null);
         setLoading(false);
+        return;
       }
+
+      setSession(session);
+      setUser(session?.user ?? null);
+      
+      if (session?.user) {
+        await fetchProfile(session.user.id);
+      }
+      
+      setLoading(false); // 🔥 Libera o ecrã após tentar carregar o user
     });
 
     return () => {
@@ -96,12 +95,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const signOut = async () => {
-    setLoading(true);
-    await supabase.auth.signOut();
-    setProfile(null);
-    setUser(null);
-    setSession(null);
-    setLoading(false);
+    try {
+      setLoading(true);
+      await supabase.auth.signOut();
+    } finally {
+      setProfile(null);
+      setUser(null);
+      setSession(null);
+      setLoading(false);
+      window.location.href = '/login'; // Força redirecionamento limpo
+    }
   };
 
   const refreshProfile = async () => {
@@ -117,8 +120,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
 export function useAuth() {
   const context = useContext(AuthContext);
-  if (context === undefined) {
-    throw new Error('useAuth deve ser usado dentro de um AuthProvider');
-  }
+  if (context === undefined) throw new Error('useAuth must be used within an AuthProvider');
   return context;
 }
