@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Search, Landmark, Wallet, Plus, ArrowUpRight, ArrowDownRight, ArrowRight, X } from 'lucide-react';
+import { Search, Landmark, Wallet, Plus, ArrowUpRight, ArrowDownRight, X } from 'lucide-react';
 import { Sidebar } from '../components/Sidebar';
 import { WalletManager } from '../components/WalletManager';
 import { useLanguage } from '../contexts/LanguageContext';
@@ -7,7 +7,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../lib/supabase';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../lib/utils';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, AreaChart, Area } from 'recharts';
+import { Tooltip, ResponsiveContainer, AreaChart, Area, XAxis } from 'recharts';
 
 interface Transaction {
   id: string;
@@ -53,8 +53,8 @@ export function Financial() {
     try {
       const { data } = await supabase.from('wallets').select('id, name').eq('user_id', user.id);
       if (data) setAvailableWallets(data);
-    } catch (err) {
-      console.error('Error fetching wallets for selection:', err);
+    } catch (error) {
+      console.error('Error fetching wallets for selection:', error);
     }
   }
 
@@ -94,8 +94,8 @@ export function Financial() {
       const outflow = txs.filter(t => t.type === 'expense').reduce((acc, t) => acc + Number(t.amount), 0);
       setStats({ balance: inflow - outflow, inflow, outflow });
 
-    } catch (err: any) {
-      console.error('Error fetching transactions:', err.message);
+    } catch (error) {
+      console.error('Error fetching transactions:', (error as Error).message);
     } finally {
       setLoading(false);
     }
@@ -122,15 +122,15 @@ export function Financial() {
       setTxDescription('');
       setTxWalletId('');
       fetchTransactions(); // Atualiza a lista e os gráficos
-    } catch (err: any) {
-      console.error('Erro ao adicionar transação:', err.message);
+    } catch (error) {
+      console.error('Erro ao adicionar transação:', (error as Error).message);
       alert('Falha ao adicionar transação.');
     }
   };
 
   const filteredTransactions = transactions.filter(tx => {
     const matchesSearch = tx.description?.toLowerCase().includes(search.toLowerCase()) || 
-                          tx.clients?.full_name.toLowerCase().includes(search.toLowerCase());
+                          tx.clients?.full_name?.toLowerCase().includes(search.toLowerCase());
     const matchesType = filterType === 'all' || tx.type === filterType;
     const matchesCategory = filterCategory === 'all' || tx.category === filterCategory;
     return matchesSearch && matchesType && matchesCategory;

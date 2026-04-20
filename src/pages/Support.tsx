@@ -6,8 +6,7 @@ import {
   Plus, 
   Clock, 
   CheckCircle2, 
-  AlertCircle, 
-  MoreVertical, 
+  AlertCircle,
   User, 
   Tag, 
   MessageSquareText, 
@@ -39,8 +38,9 @@ interface SupportTicket {
 }
 
 export function Support() {
-  const { t, formatCurrency, formatDate } = useLanguage();
-  const { user } = useAuth();
+  const { t, formatDate } = useLanguage();
+  // 🔥 Lemos o profile diretamente do contexto otimizado
+  const { user, profile } = useAuth();
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [tickets, setTickets] = useState<SupportTicket[]>([]);
   const [loading, setLoading] = useState(true);
@@ -52,23 +52,31 @@ export function Support() {
   const [formLoading, setFormLoading] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
 
-  const [formData, setFormData] = useState({
+  // 🔥 Tipagem correta para informar ao TypeScript que estes campos aceitam várias opções
+  const [formData, setFormData] = useState<{
+    subject: string;
+    description: string;
+    priority: 'low' | 'medium' | 'high';
+    category: 'technical' | 'billing' | 'feature' | 'other';
+  }>({
     subject: '',
     description: '',
-    priority: 'medium' as const,
-    category: 'technical' as const
+    priority: 'medium',
+    category: 'technical'
   });
 
   useEffect(() => {
-    fetchTickets();
-  }, [user]);
+    if (user) {
+      fetchTickets();
+    }
+  }, [user, profile]);
 
   async function fetchTickets() {
     if (!user) return;
     setLoading(true);
     try {
-      // Robust role check for both user object and metadata
-      const isAdmin = (user as any).role === 'admin' || user.user_metadata?.role === 'admin';
+      // Usamos o profile que já está na memória global (instantâneo!)
+      const isAdmin = profile?.is_admin || false;
       
       let query = supabase
         .from('support_tickets')
@@ -88,8 +96,8 @@ export function Support() {
 
       if (error) throw error;
       setTickets(data || []);
-    } catch (err: any) {
-      console.error('Error fetching tickets:', err.message);
+    } catch (error) {
+      console.error('Error fetching tickets:', (error as Error).message);
     } finally {
       setLoading(false);
     }
@@ -118,8 +126,8 @@ export function Support() {
         category: 'technical'
       });
       fetchTickets();
-    } catch (err: any) {
-      setFormError(err.message);
+    } catch (error) {
+      setFormError((error as Error).message);
     } finally {
       setFormLoading(false);
     }
@@ -134,8 +142,8 @@ export function Support() {
       
       if (error) throw error;
       fetchTickets();
-    } catch (err: any) {
-      console.error('Error updating status:', err.message);
+    } catch (error) {
+      console.error('Error updating status:', (error as Error).message);
     }
   };
 
@@ -193,23 +201,22 @@ export function Support() {
                     <span className="text-xs font-black uppercase tracking-[0.3em] text-emerald-400">Emerald AI Intelligence</span>
                   </div>
                   <h2 className="text-3xl lg:text-4xl font-black tracking-tight leading-tight">
-                    {t.talkToAiFirst.split('.')[0]}? <br/>
-                    <span className="text-emerald-400">{t.talkToAiFirst.split('.')[1] || ''}</span>
+                    {t.talkToAiFirst?.split('.')[0] || 'Fale com a IA Primeiro'}? <br/>
+                    <span className="text-emerald-400">{t.talkToAiFirst?.split('.')[1] || 'Respostas instantâneas'}</span>
                   </h2>
                   <p className="text-slate-400 font-medium text-lg leading-relaxed max-w-lg">
-                    {t.aiSupportInstruction}
+                    {t.aiSupportInstruction || 'Nossa assistente de IA pode resolver a maioria das dúvidas em segundos. Tente usá-la antes de abrir um ticket.'}
                   </p>
                   <div className="flex items-center gap-4 pt-4">
                     <button 
                       onClick={() => {
-                        // In a real app we might open the floating assistant
                         const assistantBtn = document.querySelector('[data-assistant-trigger]');
                         if (assistantBtn instanceof HTMLElement) assistantBtn.click();
                       }}
                       className="bg-emerald-500 text-white px-8 py-4 rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl shadow-emerald-500/20 hover:scale-105 transition-all active:scale-95 flex items-center gap-3"
                     >
                       <MessageSquareText className="size-4" />
-                      {t.startConversation}
+                      {t.startConversation || 'Iniciar Conversa'}
                     </button>
                   </div>
                 </div>
@@ -243,7 +250,7 @@ export function Support() {
               <Search className="absolute left-4 top-1/2 -translate-y-1/2 size-5 text-slate-300" />
               <input 
                 type="text" 
-                placeholder={t.searchTickets} 
+                placeholder={t.searchTickets || 'Buscar tickets...'} 
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 className="w-full pl-12 pr-4 py-4 bg-white border border-slate-100 rounded-[1.5rem] shadow-sm focus:ring-2 focus:ring-emerald-100 outline-none transition-all text-sm font-medium text-slate-600"
@@ -256,11 +263,11 @@ export function Support() {
                     onChange={(e) => setFilterStatus(e.target.value)}
                     className="bg-transparent border-none outline-none text-xs font-bold text-slate-500 uppercase tracking-widest cursor-pointer focus:ring-0"
                 >
-                    <option value="all">{t.allStatus}</option>
-                    <option value="open">{t.open}</option>
-                    <option value="in_progress">{t.inProgress}</option>
-                    <option value="resolved">{t.resolved}</option>
-                    <option value="closed">{t.closed}</option>
+                    <option value="all">{t.allStatus || 'Todos'}</option>
+                    <option value="open">{t.open || 'Aberto'}</option>
+                    <option value="in_progress">{t.inProgress || 'Em andamento'}</option>
+                    <option value="resolved">{t.resolved || 'Resolvido'}</option>
+                    <option value="closed">{t.closed || 'Fechado'}</option>
                 </select>
             </div>
           </div>
@@ -269,20 +276,20 @@ export function Support() {
           {loading ? (
              <div className="flex flex-col items-center justify-center py-20 gap-4">
                 <div className="w-12 h-12 border-4 border-emerald-100 border-t-emerald-500 rounded-full animate-spin" />
-                <p className="text-sm font-bold text-slate-400 uppercase tracking-widest">{t.loadingTickets}</p>
+                <p className="text-sm font-bold text-slate-400 uppercase tracking-widest">{t.loadingTickets || 'Carregando...'}</p>
              </div>
           ) : filteredTickets.length === 0 ? (
             <div className="bg-white rounded-[2.5rem] p-12 text-center border border-slate-50 shadow-sm col-span-full">
               <div className="w-16 h-16 bg-slate-50 rounded-2xl flex items-center justify-center mx-auto mb-4 text-slate-300">
                 <MessageSquare className="size-8" />
               </div>
-              <h3 className="text-lg font-bold text-slate-900 mb-2">{t.noTickets}</h3>
-              <p className="text-sm text-slate-400 max-w-xs mx-auto mb-6">{t.noTicketsDescription}</p>
+              <h3 className="text-lg font-bold text-slate-900 mb-2">{t.noTickets || 'Sem tickets'}</h3>
+              <p className="text-sm text-slate-400 max-w-xs mx-auto mb-6">{t.noTicketsDescription || 'Você não tem nenhum ticket de suporte no momento.'}</p>
               <button 
                 onClick={() => setIsModalOpen(true)}
                 className="bg-emerald-50 text-emerald-600 px-6 py-3 rounded-xl font-black text-xs uppercase tracking-widest hover:bg-emerald-100 transition-all active:scale-95"
               >
-                {t.openFirstTicket}
+                {t.openFirstTicket || 'Abrir primeiro ticket'}
               </button>
             </div>
           ) : (
@@ -338,14 +345,14 @@ export function Support() {
                         </span>
                       </div>
                       
-                      {/* Admin Controls */}
-                      {((user as any).role === 'admin' || user.user_metadata?.role === 'admin') && (
+                      {/* Admin Controls limpos! Usamos o profile.is_admin diretamente */}
+                      {profile?.is_admin && (
                         <div className="flex gap-2">
                            {ticket.status === 'open' && (
                              <button 
                                onClick={() => handleUpdateStatus(ticket.id, 'in_progress')}
                                className="p-2.5 bg-blue-50 text-blue-600 rounded-xl hover:bg-blue-100 transition-all active:scale-90"
-                               title={t.markInProgress}
+                               title={t.markInProgress || 'Marcar em progresso'}
                              >
                                <ArrowRight className="size-4" />
                              </button>
@@ -354,7 +361,7 @@ export function Support() {
                              <button 
                                onClick={() => handleUpdateStatus(ticket.id, 'resolved')}
                                className="p-2.5 bg-emerald-50 text-emerald-600 rounded-xl hover:bg-emerald-100 transition-all active:scale-90"
-                               title={t.resolveTicket}
+                               title={t.resolveTicket || 'Resolver ticket'}
                              >
                                <CheckCircle2 className="size-4" />
                              </button>
@@ -391,8 +398,8 @@ export function Support() {
                     <MessageSquareText className="size-6 text-emerald-600" />
                   </div>
                   <div>
-                    <h3 className="text-xl font-black text-slate-900 uppercase tracking-tight">{t.openTicket}</h3>
-                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{t.newSupportTicket}</p>
+                    <h3 className="text-xl font-black text-slate-900 uppercase tracking-tight">{t.openTicket || 'Abrir Ticket'}</h3>
+                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{t.newSupportTicket || 'Novo Ticket de Suporte'}</p>
                   </div>
                 </div>
 
@@ -405,11 +412,11 @@ export function Support() {
                   )}
 
                   <div className="space-y-2">
-                    <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400 ml-1">{t.ticketSubject}</label>
+                    <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400 ml-1">{t.ticketSubject || 'Assunto'}</label>
                     <input 
                       type="text"
                       required
-                      placeholder={t.subjectPlaceholder}
+                      placeholder={t.subjectPlaceholder || 'Ex: Dúvida sobre faturamento'}
                       value={formData.subject}
                       onChange={e => setFormData({...formData, subject: e.target.value})}
                       className="w-full px-4 py-4 bg-slate-50 border-none rounded-2xl focus:ring-2 focus:ring-emerald-500 outline-none text-sm font-bold text-slate-900 transition-all"
@@ -418,38 +425,38 @@ export function Support() {
 
                   <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-2">
-                      <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400 ml-1">{t.ticketPriority}</label>
+                      <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400 ml-1">{t.ticketPriority || 'Prioridade'}</label>
                       <select 
                         value={formData.priority}
-                        onChange={e => setFormData({...formData, priority: e.target.value as any})}
+                        onChange={e => setFormData({...formData, priority: e.target.value as 'low' | 'medium' | 'high'})}
                         className="w-full px-4 py-4 bg-slate-50 border-none rounded-2xl focus:ring-2 focus:ring-emerald-500 outline-none text-sm font-bold text-slate-900 transition-all cursor-pointer"
                       >
-                        <option value="low">{t.low}</option>
-                        <option value="medium">{t.medium}</option>
-                        <option value="high">{t.high}</option>
+                        <option value="low">{t.low || 'Baixa'}</option>
+                        <option value="medium">{t.medium || 'Média'}</option>
+                        <option value="high">{t.high || 'Alta'}</option>
                       </select>
                     </div>
                     <div className="space-y-2">
-                      <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400 ml-1">{t.category}</label>
+                      <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400 ml-1">{t.category || 'Categoria'}</label>
                       <select 
                         value={formData.category}
-                        onChange={e => setFormData({...formData, category: e.target.value as any})}
+                        onChange={e => setFormData({...formData, category: e.target.value as 'technical' | 'billing' | 'feature' | 'other'})}
                         className="w-full px-4 py-4 bg-slate-50 border-none rounded-2xl focus:ring-2 focus:ring-emerald-500 outline-none text-sm font-bold text-slate-900 transition-all cursor-pointer"
                       >
-                        <option value="technical">{t.technical}</option>
-                        <option value="billing">{t.billing}</option>
-                        <option value="feature">{t.feature}</option>
-                        <option value="other">{t.other}</option>
+                        <option value="technical">{t.technical || 'Técnico'}</option>
+                        <option value="billing">{t.billing || 'Faturamento'}</option>
+                        <option value="feature">{t.feature || 'Nova Funcionalidade'}</option>
+                        <option value="other">{t.other || 'Outro'}</option>
                       </select>
                     </div>
                   </div>
 
                   <div className="space-y-2">
-                    <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400 ml-1">{t.ticketDescription}</label>
+                    <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400 ml-1">{t.ticketDescription || 'Descrição'}</label>
                     <textarea 
                       required
                       rows={4}
-                      placeholder={t.descriptionPlaceholder}
+                      placeholder={t.descriptionPlaceholder || 'Descreva seu problema com detalhes...'}
                       value={formData.description}
                       onChange={e => setFormData({...formData, description: e.target.value})}
                       className="w-full px-4 py-4 bg-slate-50 border-none rounded-2xl focus:ring-2 focus:ring-emerald-500 outline-none text-sm font-bold text-slate-900 transition-all resize-none"
@@ -462,14 +469,14 @@ export function Support() {
                       onClick={() => setIsModalOpen(false)}
                       className="flex-1 px-6 py-4 bg-slate-50 text-slate-500 font-bold rounded-2xl hover:bg-slate-100 transition-all uppercase tracking-widest text-xs"
                     >
-                      {t.cancel}
+                      {t.cancel || 'Cancelar'}
                     </button>
                     <button 
                       type="submit"
                       disabled={formLoading}
                       className="flex-3 px-10 py-4 bg-emerald-500 text-white font-black rounded-2xl hover:bg-emerald-600 shadow-lg shadow-emerald-200 transition-all active:scale-[0.98] disabled:opacity-50 uppercase tracking-[0.15em] text-xs"
                     >
-                      {formLoading ? t.processing : t.createTicket}
+                      {formLoading ? (t.processing || 'Processando...') : (t.createTicket || 'Criar Ticket')}
                     </button>
                   </div>
                 </form>

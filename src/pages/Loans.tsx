@@ -9,6 +9,13 @@ import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../lib/utils';
 import Markdown from 'react-markdown';
 
+// --- CONFIGURAÇÃO DE LIMITES DO SAAS ---
+const PLAN_LIMITS = {
+  free: { maxLoans: 3, label: 'Gratuito' },
+  pro: { maxLoans: 50, label: 'Profissional' },
+  enterprise: { maxLoans: 999999, label: 'Enterprise' },
+};
+
 interface Loan {
   id: string;
   user_id: string;
@@ -43,7 +50,8 @@ interface Client {
 
 export function Loans() {
   const { t, formatCurrency, formatDate } = useLanguage();
-  const { user } = useAuth();
+  // 🔥 Lemos o perfil e o user diretamente do contexto global!
+  const { user, profile } = useAuth();
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [loans, setLoans] = useState<Loan[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
@@ -92,8 +100,10 @@ export function Loans() {
   });
 
   useEffect(() => {
-    fetchLoans();
-    fetchClients();
+    if (user) {
+      fetchLoans();
+      fetchClients();
+    }
   }, [user]);
 
   const handleValidateContract = async (loanId: string) => {
@@ -170,6 +180,17 @@ export function Loans() {
         status: loan.status
       });
     } else {
+      // --- LÓGICA DE BLOQUEIO DO SAAS ---
+      const userPlan = profile?.plan_type || 'free';
+      const limit = PLAN_LIMITS[userPlan].maxLoans;
+
+      if (loans.length >= limit) {
+        alert(
+          `Limite atingido! O seu plano ${PLAN_LIMITS[userPlan].label} permite apenas ${limit} empréstimos criados.\n\nFaça upgrade para conceder empréstimos ilimitados!`
+        );
+        return;
+      }
+
       setEditingLoan(null);
       setFormData({
         client_id: '',
@@ -353,7 +374,7 @@ export function Loans() {
         </Header>
 
         <div className="px-4 lg:px-8 py-8 w-full transition-all">
-          {/* Filters */}
+          {/* Filters & Plan Indicator */}
           <div className="flex flex-col sm:flex-row gap-4 mb-8">
             <div className="flex-1 relative">
               <Search className="absolute left-4 top-1/2 -translate-y-1/2 size-5 text-slate-300" />
@@ -364,6 +385,13 @@ export function Loans() {
                 onChange={(e) => setSearch(e.target.value)}
                 className="w-full pl-12 pr-4 py-4 bg-white border border-slate-100 rounded-[1.5rem] shadow-sm focus:ring-2 focus:ring-emerald-100 outline-none transition-all text-sm font-medium text-slate-600"
               />
+            </div>
+            {/* Indicador do Plano */}
+            <div className="px-6 py-4 bg-white rounded-[1.5rem] border border-slate-100 flex items-center gap-3">
+               <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+               <span className="text-xs font-bold text-slate-500 uppercase tracking-widest">
+                  Plano: {profile?.plan_type || 'A carregar...'}
+               </span>
             </div>
             <div className="flex items-center gap-2 bg-white px-4 py-2 border border-slate-100 rounded-[1.5rem] shadow-sm">
                 <Filter className="size-4 text-slate-400" />

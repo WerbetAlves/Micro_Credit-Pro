@@ -7,6 +7,16 @@ import { motion, AnimatePresence } from 'motion/react';
 import { generateLoanContract } from '../services/contractService';
 import { cn } from '../lib/utils';
 
+interface Client {
+  id: string;
+  full_name: string;
+}
+
+interface Wallet {
+  id: string;
+  name: string;
+}
+
 export function LoanSimulator() {
   const { formatCurrency } = useLanguage();
   const { user } = useAuth();
@@ -23,10 +33,10 @@ export function LoanSimulator() {
   const [category, setCategory] = useState('Microcrédito');
   
   // Novos estados para vinculação com o banco de dados
-  const [clients, setClients] = useState<any[]>([]);
+  const [clients, setClients] = useState<Client[]>([]);
   const [selectedClientId, setSelectedClientId] = useState('');
-  const [selectedWalletId, setSelectedWalletId] = useState('');
-  const [wallets, setWallets] = useState<any[]>([]);
+  const [selectedWalletId, setSelectedWalletId] = useState<string>('');
+  const [wallets, setWallets] = useState<Wallet[]>([]);
   const [isSaving, setIsSaving] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
 
@@ -124,6 +134,11 @@ export function LoanSimulator() {
     
     setIsSaving(true);
     try {
+      // --- INÍCIO DA TRANSAÇÃO SIMULADA ---
+      // EM PRODUÇÃO: O ideal é agrupar todas as operações de escrita (insert, update)
+      // em uma única chamada de função de banco de dados (RPC) para garantir a atomicidade.
+      // Se qualquer passo falhar, todos os anteriores são desfeitos (rollback).
+
       // 0. Busca dados para o contrato
       const { data: profile } = await supabase.from('profiles').select('*').single();
       const { data: client } = await supabase.from('clients').select('*').eq('id', selectedClientId).single();
@@ -276,7 +291,7 @@ export function LoanSimulator() {
             
             <div className="space-y-2">
               <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-4">Tipo Juros</label>
-              <select value={interestType} onChange={(e: any) => setInterestType(e.target.value)} className="w-full bg-slate-50 border-none rounded-2xl px-6 py-4 text-sm font-bold focus:ring-2 focus:ring-emerald-100 outline-none appearance-none">
+              <select value={interestType} onChange={(e) => setInterestType(e.target.value as 'monthly' | 'annual')} className="w-full bg-slate-50 border-none rounded-2xl px-6 py-4 text-sm font-bold focus:ring-2 focus:ring-emerald-100 outline-none appearance-none">
                 <option value="monthly">Ao Mês</option>
                 <option value="annual">Ao Ano</option>
               </select>
@@ -286,7 +301,7 @@ export function LoanSimulator() {
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="space-y-2">
               <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-4">Freq. Pagamento</label>
-              <select value={paymentFrequency} onChange={(e: any) => setPaymentFrequency(e.target.value)} className="w-full bg-slate-50 border-none rounded-2xl px-6 py-4 text-sm font-bold focus:ring-2 focus:ring-emerald-100 outline-none appearance-none">
+              <select value={paymentFrequency} onChange={(e) => setPaymentFrequency(e.target.value as 'monthly' | 'daily' | 'weekly' | 'biweekly')} className="w-full bg-slate-50 border-none rounded-2xl px-6 py-4 text-sm font-bold focus:ring-2 focus:ring-emerald-100 outline-none appearance-none">
                 <option value="daily">Diário</option>
                 <option value="weekly">Semanal</option>
                 <option value="biweekly">Quinzenal</option>
@@ -298,7 +313,7 @@ export function LoanSimulator() {
               <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-4">Categoria</label>
               <select 
                 value={category} 
-                onChange={(e: any) => setCategory(e.target.value)} 
+                onChange={(e) => setCategory(e.target.value)} 
                 className="w-full bg-slate-50 border-none rounded-2xl px-6 py-4 text-sm font-bold focus:ring-2 focus:ring-emerald-100 outline-none appearance-none"
               >
                 <option value="Microcrédito">Microcrédito</option>

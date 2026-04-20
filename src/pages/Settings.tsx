@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { CreditCard, Shield, Zap, Check, Star, Settings as SettingsIcon, FileText, Plus, Trash2, Camera, MapPin, Phone, AlertCircle, Download, Upload } from 'lucide-react';
 import { Sidebar } from '../components/Sidebar';
 import { Header } from '../components/Header';
@@ -9,25 +9,46 @@ import { supabase } from '../lib/supabase';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../lib/utils';
 
+interface PaymentMethod {
+  id: string;
+  type: string;
+  last4: string;
+  brand: string;
+  name: string;
+}
+
+interface Profile {
+  id: string;
+  full_name: string;
+  business_name: string;
+  document_id: string;
+  phone: string;
+  address: string;
+  avatar_url: string;
+  plan_type: 'free' | 'pro' | 'enterprise';
+  payment_methods: PaymentMethod[];
+}
+
+interface LocationState {
+  activeTab?: 'profile' | 'billing' | 'payments' | 'privacy';
+}
+
 export function Settings() {
   const { t } = useLanguage();
   const { user } = useAuth();
   const location = useLocation();
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   
   // Use state from navigation or default to 'profile'
-  const initialTab = (location.state as any)?.activeTab || 'profile';
+  const locationState = location.state as LocationState | null;
+  const initialTab = locationState?.activeTab || 'profile';
   const [activeTab, setActiveTab] = useState<'profile' | 'billing' | 'payments' | 'privacy'>(initialTab);
 
   const { signOut } = useAuth();
-
-  useEffect(() => {
-    if ((location.state as any)?.activeTab) {
-      setActiveTab((location.state as any).activeTab);
-    }
-  }, [location.state]);
-  const [profile, setProfile] = useState<any>(null);
+  const [profile, setProfile] = useState<Profile | null>(null);
   const [isUpdating, setIsUpdating] = useState(false);
+  const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
 
   useEffect(() => {
     fetchProfile();
@@ -35,9 +56,50 @@ export function Settings() {
 
   async function fetchProfile() {
     if (!user) return;
-    const { data } = await supabase.from('profiles').select('*').single();
-    if (data) setProfile(data);
+    const { data } = await supabase.from('profiles').select('*').eq('id', user.id).single();
+    if (data) setProfile(data as Profile);
   }
+
+  // 🔥 NOVA FUNÇÃO: Faz o upload da foto de perfil para o Supabase Storage
+  const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !user) return;
+
+    setIsUploadingAvatar(true);
+    try {
+      // Cria um nome único para o ficheiro
+      const fileExt = file.name.split('.').pop();
+      const fileName = `${user.id}-${Math.random()}.${fileExt}`;
+
+      // Faz o upload para o bucket 'avatars'
+      const { error: uploadError } = await supabase.storage
+        .from('avatars')
+        .upload(fileName, file);
+
+      if (uploadError) throw uploadError;
+
+      // Pega a URL pública da imagem recém-enviada
+      const { data } = supabase.storage.from('avatars').getPublicUrl(fileName);
+
+      // Atualiza o perfil do utilizador com a nova URL
+      const { error: updateError } = await supabase
+        .from('profiles')
+        .update({ avatar_url: data.publicUrl })
+        .eq('id', user.id);
+
+      if (updateError) throw updateError;
+
+      await fetchProfile();
+      alert('Foto de perfil atualizada com sucesso!');
+    } catch (err: any) {
+      console.error('Erro no upload do avatar:', err.message);
+      alert('Erro ao enviar imagem. Verifique se criou o bucket "avatars" público no Supabase.');
+    } finally {
+      setIsUploadingAvatar(false);
+      // Limpa o input para permitir selecionar o mesmo ficheiro novamente se necessário
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
 
   const handleUpdateProfile = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -75,8 +137,8 @@ export function Settings() {
       if (error) throw error;
       await fetchProfile();
       alert(`Parabéns! Você acaba de migrar para o plano ${plan.toUpperCase()}`);
-    } catch (e: any) {
-      console.error(e);
+    } catch (error) {
+      console.error("Upgrade error:", error);
       alert('Erro ao processar assinatura.');
     } finally {
       setIsUpdating(false);
@@ -97,18 +159,18 @@ export function Settings() {
     try {
       await supabase.from('profiles').update({ payment_methods: updatedMethods }).eq('id', user?.id);
       await fetchProfile();
-    } catch (err) {
+    } catch (error) {
       alert('Erro ao adicionar método.');
     }
   };
 
   const handleRemovePaymentMethod = async (id: string) => {
     if (!profile) return;
-    const updatedMethods = profile.payment_methods.filter((m: any) => m.id !== id);
+    const updatedMethods = profile.payment_methods.filter((m: PaymentMethod) => m.id !== id);
     try {
       await supabase.from('profiles').update({ payment_methods: updatedMethods }).eq('id', user?.id);
       await fetchProfile();
-    } catch (err) {
+    } catch (error) {
       alert('Erro ao remover método.');
     }
   };
@@ -120,19 +182,16 @@ export function Settings() {
 
     setIsUpdating(true);
     try {
-      // In a real DB we'd use cascading or multiple deletes
-      // In simulation we'll clear specific tables
       const tables = ['installments', 'loans', 'clients', 'transactions', 'notifications', 'support_tickets'];
       
       for (const table of tables) {
-        // Mocking the delete of user data
-        // In local simulation we'd filter by user_id
         await supabase.from(table).delete().eq('user_id', user.id);
       }
       
       alert(t.deleteDataSuccess);
-    } catch (err: any) {
-      alert('Error clearing data.');
+    } catch (error) {
+      console.error("Delete data error:", error);
+      alert('Erro ao limpar os dados.');
     } finally {
       setIsUpdating(false);
     }
@@ -148,14 +207,19 @@ export function Settings() {
       // 1. Delete all data
       const tables = ['installments', 'loans', 'clients', 'transactions', 'notifications', 'support_tickets', 'wallets', 'profiles'];
       for (const table of tables) {
-        await supabase.from(table).delete().eq('user_id', user.id);
+        if (table === 'profiles') {
+          await supabase.from(table).delete().eq('id', user.id);
+        } else {
+          await supabase.from(table).delete().eq('user_id', user.id);
+        }
       }
 
       // 2. Sign Out
       alert(t.deleteAccountSuccess);
       signOut();
-    } catch (err: any) {
-      alert('Error deleting account.');
+    } catch (error) {
+      console.error("Delete account error:", error);
+      alert('Erro ao apagar a conta.');
     } finally {
       setIsUpdating(false);
     }
@@ -173,7 +237,8 @@ export function Settings() {
       };
 
       for (const table of tables) {
-        const { data } = await supabase.from(table).select('*');
+        const query = supabase.from(table).select('*');
+        const { data } = await (table === 'profiles' ? query.eq('id', user.id) : query.eq('user_id', user.id));
         backupData.data[table] = data || [];
       }
 
@@ -186,8 +251,8 @@ export function Settings() {
       link.click();
       document.body.removeChild(link);
       URL.revokeObjectURL(url);
-    } catch (err) {
-      console.error(err);
+    } catch (error) {
+      console.error("Export error:", error);
       alert('Error exporting data.');
     } finally {
       setIsUpdating(false);
@@ -216,15 +281,14 @@ export function Settings() {
       for (const table of tables) {
         const rows = backup.data[table];
         if (Array.isArray(rows) && rows.length > 0) {
-          // Simulation upsert
           await supabase.from(table).upsert(rows);
         }
       }
 
       alert(t.importSuccess);
       window.location.reload();
-    } catch (err) {
-      console.error(err);
+    } catch (error) {
+      console.error("Import error:", error);
       alert(t.importError);
     } finally {
       setIsUpdating(false);
@@ -324,6 +388,7 @@ export function Settings() {
                 <div className="lg:col-span-2 space-y-6">
                   <div className="bg-white border border-slate-200 rounded-[2.5rem] p-8 lg:p-12 shadow-sm space-y-10">
                     <div className="flex flex-col sm:flex-row sm:items-center gap-6 pb-2 border-b border-slate-50">
+                      <input type="file" ref={fileInputRef} onChange={handleAvatarUpload} accept="image/*" className="hidden" />
                       <div className="relative group">
                         <div className="size-24 rounded-[2rem] bg-emerald-50 flex items-center justify-center text-emerald-600 overflow-hidden border-4 border-slate-50">
                           {profile?.avatar_url ? (
@@ -331,8 +396,17 @@ export function Settings() {
                           ) : (
                             <Camera className="size-10 opacity-20" />
                           )}
+                          {isUploadingAvatar && (
+                            <div className="absolute inset-0 bg-white/70 flex items-center justify-center backdrop-blur-sm">
+                               <div className="size-6 border-2 border-emerald-500/30 border-t-emerald-500 rounded-full animate-spin" />
+                            </div>
+                          )}
                         </div>
-                        <button className="absolute -bottom-2 -right-2 p-2.5 bg-white shadow-lg border border-slate-100 rounded-xl text-slate-400 hover:text-emerald-500 transition-all">
+                        <button 
+                          onClick={() => fileInputRef.current?.click()}
+                          disabled={isUploadingAvatar}
+                          className="absolute -bottom-2 -right-2 p-2.5 bg-white shadow-lg border border-slate-100 rounded-xl text-slate-400 hover:text-emerald-500 transition-all disabled:opacity-50"
+                        >
                           <Camera className="size-4" />
                         </button>
                       </div>

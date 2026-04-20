@@ -6,12 +6,11 @@ import { supabase } from '../lib/supabase';
 import { motion } from 'motion/react';
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, 
-  PieChart, Pie, Cell, LineChart, Line, Legend, AreaChart, Area 
+  PieChart, Pie, Cell
 } from 'recharts';
 import { 
-  TrendingUp, TrendingDown, BrainCircuit, Activity, 
+  TrendingUp, BrainCircuit, Activity, 
   Target, ShieldAlert, Zap, Layers, Landmark, Sparkles,
-  ArrowRight
 } from 'lucide-react';
 import { GoogleGenAI } from "@google/genai";
 import { cn } from '../lib/utils';
@@ -31,36 +30,34 @@ export function Analytics() {
     delinquencyRate: 0,
     expectedRevenue: 0,
     growthRate: 0,
-    statusDistribution: [] as any[],
-    monthlyVolume: [] as any[],
+    statusDistribution: [] as { name: string; value: number }[],
+    monthlyVolume: [] as { month: string; amount: number }[],
   });
 
   useEffect(() => {
-    if (user) {
-      fetchAnalyticsData();
+    // Garante que a busca só ocorre se o usuário estiver logado
+    if (user && user.id) {
+      fetchAnalyticsData(user.id);
     }
   }, [user]);
 
-  async function fetchAnalyticsData() {
+  // Passamos o userId como parâmetro para o TypeScript saber que ele não é nulo aqui
+  async function fetchAnalyticsData(userId: string) {
     setLoading(true);
     try {
-      // 1. Fetch Loans & Status Distribution
-      const { data: loans, error: loansError } = await supabase
-        .from('loans')
-        .select('*')
-        .eq('user_id', user.id);
-      
+      const [loansRes, installmentsRes] = await Promise.all([
+        supabase.from('loans').select('*').eq('user_id', userId),
+        supabase.from('installments').select('*, loans!inner(user_id)').eq('loans.user_id', userId)
+      ]);
+
+      const { data: loans, error: loansError } = loansRes;
+      const { data: installments, error: instError } = installmentsRes;
+
       if (loansError) throw loansError;
-
-      // 2. Fetch Installments for Delinquency
-      const { data: installments, error: instError } = await supabase
-        .from('installments')
-        .select('*, loans!inner(user_id)')
-        .eq('loans.user_id', user.id);
-
       if (instError) throw instError;
 
       // Calculations
+      if (!loans || !installments) throw new Error("Failed to fetch essential data.");
       const totalPortfolio = loans.reduce((acc, l) => acc + Number(l.principal_amount), 0);
       
       const lateAmount = installments
@@ -79,7 +76,7 @@ export function Analytics() {
         .reduce((acc, i) => acc + Number(i.amount), 0);
 
       // Status Distribution
-      const statusCounts = loans.reduce((acc: any, l) => {
+      const statusCounts = loans.reduce((acc: Record<string, number>, l) => {
         acc[l.status] = (acc[l.status] || 0) + 1;
         return acc;
       }, {});
@@ -90,7 +87,7 @@ export function Analytics() {
       }));
 
       // Monthly Volume (Mocking grouping for now, ideally aggregation query)
-      const monthlyData = loans.reduce((acc: any, l) => {
+      const monthlyData = loans.reduce((acc: Record<string, { month: string; amount: number }>, l) => {
         const month = new Date(l.created_at).toLocaleDateString([], { month: 'short' });
         if (!acc[month]) acc[month] = { month, amount: 0 };
         acc[month].amount += Number(l.principal_amount);
@@ -106,8 +103,8 @@ export function Analytics() {
         monthlyVolume: Object.values(monthlyData),
       });
 
-    } catch (err: any) {
-      console.error('Analytics Fetch Error:', err.message);
+    } catch (error) {
+      console.error('Analytics Fetch Error:', (error as Error).message);
     } finally {
       setLoading(false);
     }
@@ -116,7 +113,7 @@ export function Analytics() {
   async function generateAIInsights() {
     setAiLoading(true);
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+      const ai = new GoogleGenAI({ apiKey: import.meta.env.VITE_GEMINI_API_KEY });
       
       const prompt = `
         Aja como um consultor estratégico de elite para uma empresa de microcrédito (Emerald Micro-Credit).
@@ -141,9 +138,10 @@ export function Analytics() {
         contents: prompt,
       });
 
-      setAiInsight(response.text);
-    } catch (err: any) {
-      console.error('Gemini Error:', err.message);
+      // Garantimos que passamos uma string vazia caso text seja undefined
+      setAiInsight(response.text || "Insights gerados vazios. Tente novamente.");
+    } catch (error) {
+      console.error('Gemini Error:', (error as Error).message);
       setAiInsight("Desculpe, não conseguimos conectar com o consultor de IA agora. Verifique sua chave de API.");
     } finally {
       setAiLoading(false);
@@ -205,16 +203,16 @@ export function Analytics() {
                     <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Processando dados da carteira...</p>
                   </div>
                 ) : aiInsight ? (
-                  <div className="text-slate-700 font-medium text-sm whitespace-pre-wrap leading-relaxed">
+                  <div className="text-slate-700 font-medium text-sm whitespace-pre-wrap leading-relaxed z-10">
                     {aiInsight}
                   </div>
                 ) : (
-                  <div className="text-center space-y-2">
+                  <div className="text-center space-y-2 z-10">
                     <Target className="size-10 text-slate-200 mx-auto" />
                     <p className="text-xs text-slate-400 font-medium">Clique no botão para iniciar a análise estratégica.</p>
                   </div>
                 )}
-                <BrainCircuit className="absolute bottom-4 right-4 size-16 text-slate-100 z-0" />
+                <BrainCircuit className="absolute bottom-4 right-4 size-16 text-slate-200/50 z-0" />
               </div>
             </div>
           </motion.div>
@@ -300,7 +298,7 @@ export function Analytics() {
                   </PieChart>
                 </ResponsiveContainer>
               </div>
-              <div className="space-y-3 mt-4">
+              <div className="space-y-3 mt-4 relative z-10">
                  {stats.statusDistribution.map((entry, index) => (
                    <div key={entry.name} className="flex items-center justify-between text-xs">
                       <div className="flex items-center gap-2">

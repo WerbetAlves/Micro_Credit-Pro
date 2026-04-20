@@ -94,10 +94,11 @@ export default function App() {
             </ProtectedRoute>
           } 
         />
+        {/* ROTA BLINDADA: Apenas administradores podem aceder a esta página */}
         <Route 
           path="/admin" 
           element={
-            <ProtectedRoute>
+            <ProtectedRoute requireAdmin={true}>
               <Admin />
             </ProtectedRoute>
           } 

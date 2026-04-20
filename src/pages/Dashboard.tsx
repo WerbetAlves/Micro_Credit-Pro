@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Search, Bell, Plus, Menu, Zap, User, Wallet } from 'lucide-react';
+import { Plus, Zap, User, Wallet, AlertCircle } from 'lucide-react';
 import { Sidebar } from '../components/Sidebar';
 import { Header } from '../components/Header';
 import { AIAssistantDashboard } from '../components/AIAssistantDashboard';
@@ -13,16 +13,15 @@ import { WelcomeAnimation } from '../components/WelcomeAnimation';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useAuth } from '../contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
-import { supabase, isConfigured } from '../lib/supabase';
+import { supabase } from '../lib/supabase';
 import { cn } from '../lib/utils';
-import { AlertCircle } from 'lucide-react';
 
 export function Dashboard() {
   const { t, formatCurrency } = useLanguage();
-  const { user } = useAuth();
+  // 🔥 Lemos o user E o profile diretamente do contexto (Instântaneo!)
+  const { user, profile } = useAuth();
   const navigate = useNavigate();
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-  const [profile, setProfile] = useState<any>(null);
   
   const [stats, setStats] = useState({
     totalCapital: 0,
@@ -34,7 +33,6 @@ export function Dashboard() {
     hasClients: false,
     hasLoans: false
   });
-  const [errorVisible, setErrorVisible] = useState<string | null>(null);
   const [showWelcome, setShowWelcome] = useState(false);
 
   useEffect(() => {
@@ -52,71 +50,56 @@ export function Dashboard() {
   };
 
   useEffect(() => {
-    fetchDashboardStats();
+    if (user) {
+      fetchDashboardStats();
+    }
   }, [user]);
 
   async function fetchDashboardStats() {
     if (!user) return;
 
     try {
-      setErrorVisible(null);
-      // 0. Busca Perfil
-      const { data: profileData } = await supabase.from('profiles').select('*').single();
-      if (profileData) setProfile(profileData);
+      const now = new Date();
+      const firstDay = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0];
+      const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().split('T')[0];
 
-      // 1. Busca Empréstimos (Dinheiro Emprestado)
-      const { data: loans, error: loansError } = await supabase
-        .from('loans')
-        .select('*')
-        .eq('user_id', user.id);
-      
+      // 🔥 Removemos o pedido do Profile daqui. São menos dados a trafegar pela rede!
+      const [loansRes, walletsRes, clientsRes, installmentsRes] = await Promise.all([
+        supabase.from('loans').select('*').eq('user_id', user.id),
+        supabase.from('wallets').select('balance').eq('user_id', user.id),
+        supabase.from('clients').select('id', { count: 'exact', head: true }).eq('user_id', user.id),
+        supabase.from('installments').select('amount, loan_id').eq('status', 'paid').gte('due_date', firstDay).lte('due_date', lastDay)
+      ]);
+
+      const { data: loans, error: loansError } = loansRes;
       if (loansError) throw loansError;
 
+      const { data: wallets, error: walletsError } = walletsRes;
+      if (walletsError) throw walletsError;
+
+      const { count: clientsCount, error: clientsError } = clientsRes;
+      if (clientsError) throw clientsError;
+
+      const { data: paidInstallments, error: instError } = installmentsRes;
+      if (instError) throw instError;
+
+      // Cálculos
       const totalLoansCapital = (loans || []).reduce((acc, l) => acc + Number(l.principal_amount), 0);
       const activeCount = (loans || []).filter(l => l.status === 'active' || l.status === 'pending').length;
       const defaultCount = (loans || []).filter(l => l.status === 'default').length;
       const defRate = loans?.length ? (defaultCount / loans.length) * 100 : 0;
       const avgAmt = loans?.length ? totalLoansCapital / loans.length : 0;
-
-      // 2. Busca Saldo das Carteiras (Dinheiro em Caixa)
-      let totalWalletBalance = 0;
-      const { data: wallets, error: walletsError } = await supabase
-        .from('wallets')
-        .select('balance')
-        .eq('user_id', user.id);
       
-      if (!walletsError && wallets) {
-        totalWalletBalance = wallets.reduce((acc, w) => acc + Number(w.balance), 0);
-      }
+      const totalWalletBalance = (wallets || []).reduce((acc, w) => acc + Number(w.balance), 0);
 
-      // 3. Busca Contagem de Clientes (para o Onboarding)
-      const { count: clientsCount } = await supabase
-        .from('clients')
-        .select('id', { count: 'exact' })
-        .eq('user_id', user.id)
-        .limit(1);
-
-      // 4. Lucro Mensal (Cálculo robusto sem join complexo)
       let monthlyP = 0;
-      const now = new Date();
-      const firstDay = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0];
-      const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().split('T')[0];
-      
-      const { data: paidInstallments, error: instError } = await supabase
-        .from('installments')
-        .select('amount, loan_id')
-        .eq('status', 'paid')
-        .gte('due_date', firstDay)
-        .lte('due_date', lastDay);
-
-      if (!instError && paidInstallments && loans) {
+      if (paidInstallments && loans) {
         const myLoanIds = loans.map(l => l.id);
         monthlyP = paidInstallments
           .filter(i => myLoanIds.includes(i.loan_id))
           .reduce((acc, i) => acc + Number(i.amount), 0);
       }
 
-      // 5. Consolida tudo no Estado
       setStats({
         totalCapital: totalLoansCapital + totalWalletBalance,
         monthlyProfit: monthlyP,
@@ -127,9 +110,8 @@ export function Dashboard() {
         hasClients: (clientsCount || 0) > 0,
         hasLoans: (loans?.length || 0) > 0
       });
-    } catch (err: any) {
-      console.error('Error fetching dashboard stats:', err.message);
-      setErrorVisible(err.message);
+    } catch (error) {
+      console.error('Error fetching dashboard stats:', (error as Error).message);
     }
   }
 
@@ -208,39 +190,37 @@ export function Dashboard() {
             hasLoans={stats.hasLoans}
           />
 
-          {/* KPI Grid - O Card "Total Capital" agora refletirá a nova conta */}
+          {/* KPI Grid */}
           <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 lg:gap-6">
             <KPICard 
               label={t.totalCapital} 
               value={stats.totalCapital} 
               isCurrency={true}
-              change={t.vsLastMonth.replace('{val}', '+0.0%')}
+              change={t.vsLastMonth?.replace('{val}', '+0.0%') || '+0.0%'}
               trend="up" 
             />
             <KPICard 
               label={t.monthlyProfit} 
               value={stats.monthlyProfit} 
               isCurrency={true}
-              change={t.yield.replace('{val}', '0.0%')} 
+              change={t.yield?.replace('{val}', '0.0%') || '0.0%'} 
               trend="up" 
             />
             <KPICard 
               label={t.activeLoans} 
               value={stats.activeLoans.toString()} 
-              subtext={t.avgPerClient.replace('{amount}', formatCurrency(stats.avgLoanAmount))} 
+              subtext={t.avgPerClient?.replace('{amount}', formatCurrency(stats.avgLoanAmount)) || `Média: ${formatCurrency(stats.avgLoanAmount)}`} 
             />
             <KPICard 
               label={t.defaultRate} 
               value={`${stats.defaultRate.toFixed(1)}%`} 
-              change={t.improvement.replace('{val}', '0,0%')} 
+              change={t.improvement?.replace('{val}', '0,0%') || '0.0%'} 
               trend="up" 
             />
           </section>
 
-          {/* LAYOUT DO MAIN CONTENT: Simulador no topo como configuramos antes */}
           <div className="space-y-8 lg:space-y-12 w-full">
             
-            {/* LINHA 1: Simulador Ocupando a Largura Total (12/12) */}
             <div id="issue-new-credit" className="space-y-6 scroll-mt-24 w-full">
               <div className="flex items-center justify-between px-2">
                 <h3 className="text-xl lg:text-2xl font-black tracking-tight text-slate-900">{t.issueNewCredit}</h3>
@@ -250,7 +230,6 @@ export function Dashboard() {
               </div>
             </div>
 
-            {/* LINHA 2: Cobranças e Sidebar Direita */}
             <div className="grid grid-cols-1 xl:grid-cols-12 gap-6 md:gap-8 lg:gap-12">
               <div className="xl:col-span-8 w-full min-w-0">
                 <UpcomingCollections />

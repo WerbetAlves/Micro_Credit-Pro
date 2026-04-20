@@ -6,20 +6,26 @@ import {
   Activity, 
   TrendingUp, 
   Search, 
-  MoreVertical, 
   UserCheck, 
-  UserMinus,
   Crown,
-  LayoutDashboard,
   AlertCircle
 } from 'lucide-react';
-import { motion, AnimatePresence } from 'motion/react';
+import { motion } from 'motion/react';
 import { Header } from '../components/Header';
 import { Sidebar } from '../components/Sidebar';
 import { useLanguage } from '../contexts/LanguageContext';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
 import { cn } from '../lib/utils';
+
+interface UserProfile {
+  id: string;
+  full_name: string;
+  email: string;
+  plan_type: string;
+  avatar_url: string;
+  created_at: string;
+}
 
 export function Admin() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
@@ -32,7 +38,7 @@ export function Admin() {
     totalVolume: 0,
     systemHealth: 98.5
   });
-  const [users, setUsers] = useState<any[]>([]);
+  const [users, setUsers] = useState<UserProfile[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [isAdmin, setIsAdmin] = useState(false);
@@ -54,8 +60,8 @@ export function Admin() {
         setIsAdmin(true);
         fetchAdminData();
       }
-    } catch (err) {
-      console.error('Error checking admin status:', err);
+    } catch (error) {
+      console.error('Error checking admin status:', error);
     }
   }
 
@@ -83,8 +89,8 @@ export function Admin() {
         totalVolume,
         systemHealth: 99.8
       });
-    } catch (err) {
-      console.error('Error fetching admin data:', err);
+    } catch (error) {
+      console.error('Error fetching admin data:', error);
     } finally {
       setLoading(false);
     }
@@ -92,7 +98,7 @@ export function Admin() {
 
   async function toggleUserPlan(userId: string, currentPlan: string) {
     const plans: ('free' | 'pro' | 'enterprise')[] = ['free', 'pro', 'enterprise'];
-    const currentIndex = plans.indexOf(currentPlan as any);
+    const currentIndex = plans.indexOf(currentPlan as 'free' | 'pro' | 'enterprise');
     const nextPlan = plans[(currentIndex + 1) % plans.length];
 
     try {
@@ -109,8 +115,8 @@ export function Admin() {
   }
 
   const filteredUsers = users.filter(u => 
-    u.full_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    u.email.toLowerCase().includes(searchTerm.toLowerCase())
+    (u.full_name || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+    (u.email || '').toLowerCase().includes(searchTerm.toLowerCase())
   );
 
   if (!isAdmin && !loading) {
@@ -181,7 +187,7 @@ export function Admin() {
                 <Search className="absolute left-4 top-1/2 -translate-y-1/2 size-4 text-slate-400 group-focus-within:text-emerald-500 transition-colors" />
                 <input 
                   type="text"
-                  placeholder={t.searchTickets}
+                  placeholder={t.searchClients}
                   className="w-full pl-11 pr-4 py-3 bg-white border border-slate-200 rounded-2xl focus:ring-4 focus:ring-emerald-500/10 focus:border-emerald-500 transition-all outline-none text-sm font-medium"
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
@@ -210,18 +216,18 @@ export function Admin() {
                               {u.avatar_url ? (
                                 <img src={u.avatar_url} className="size-full rounded-full object-cover" alt="" referrerPolicy="no-referrer" />
                               ) : (
-                                u.full_name.charAt(0)
+                                (u.full_name || 'U').charAt(0).toUpperCase()
                               )}
                             </div>
                             <div>
-                              <p className="text-sm font-bold text-slate-900 leading-none">{u.full_name}</p>
+                              <p className="text-sm font-bold text-slate-900 leading-none">{u.full_name || 'Usuário Sem Nome'}</p>
                               <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">
                                 {new Date(u.created_at).toLocaleDateString()}
                               </p>
                             </div>
                           </div>
                         </td>
-                        <td className="px-8 py-5 font-mono text-xs text-slate-500">{u.email}</td>
+                        <td className="px-8 py-5 font-mono text-xs text-slate-500">{u.email || 'Sem e-mail'}</td>
                         <td className="px-8 py-5">
                           <div className={cn(
                             "inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest",
@@ -231,7 +237,7 @@ export function Admin() {
                           )}>
                             {u.plan_type === 'enterprise' && <Shield className="size-3" />}
                             {u.plan_type === 'pro' && <Crown className="size-3" />}
-                            {u.plan_type}
+                            {u.plan_type || 'free'}
                           </div>
                         </td>
                         <td className="px-8 py-5">
@@ -261,7 +267,7 @@ export function Admin() {
   );
 }
 
-function AdminKPICard({ label, value, icon: Icon, color }: { label: string; value: string; icon: any; color: string }) {
+function AdminKPICard({ label, value, icon: Icon, color }: { label: string; value: string; icon: React.ElementType; color: string }) {
   return (
     <motion.div 
       initial={{ opacity: 0, y: 20 }}
