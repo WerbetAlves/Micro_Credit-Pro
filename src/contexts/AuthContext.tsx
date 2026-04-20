@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useState, ReactNode } from 'react';
+import React, { createContext, useContext, useEffect, useState, ReactNode, useCallback } from 'react';
 import { User, Session } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
 
@@ -9,7 +9,7 @@ export interface Profile {
   avatar_url: string | null;
   is_admin: boolean;
   plan_type: 'free' | 'pro' | 'enterprise';
-  has_onboarded: boolean; // 🔥 Controla a animação de boas-vindas
+  has_onboarded: boolean;
 }
 
 interface AuthContextType {
@@ -29,74 +29,72 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
 
-  // Função para buscar perfil com tratamento de erro
-  async function fetchProfile(userId: string) {
+  // 1. Memoizamos a função para evitar que ela dispare re-renders desnecessários
+  const fetchProfile = useCallback(async (userId: string) => {
     try {
       const { data, error } = await supabase
         .from('profiles')
         .select('*')
         .eq('id', userId)
-        .maybeSingle(); 
-        
+        .maybeSingle();
+      
       if (error) throw error;
       setProfile(data as Profile);
+      return data;
     } catch (error) {
       console.error('Erro ao buscar perfil:', error);
       setProfile(null);
+      return null;
     }
-  }
+  }, []);
 
   useEffect(() => {
     let mounted = true;
 
     async function initializeAuth() {
+      setLoading(true);
       try {
-        // 1. Tenta recuperar a sessão atual do localStorage
         const { data: { session: initialSession }, error: sessionError } = await supabase.auth.getSession();
         
         if (sessionError) {
-          console.error("Erro de sessão corrompida:", sessionError);
-          await supabase.auth.signOut();
-          throw sessionError;
-        }
-
-        if (mounted) {
+          // Se o token estiver corrompido, limpa tudo silenciosamente
+          localStorage.removeItem('supabase.auth.token');
+          setUser(null);
+          setSession(null);
+        } else if (initialSession && mounted) {
           setSession(initialSession);
-          setUser(initialSession?.user ?? null);
-          
-          if (initialSession?.user) {
-            await fetchProfile(initialSession.user.id);
-          }
+          setUser(initialSession.user);
+          // 🔥 Sincronia: Aguarda o perfil antes de liberar o loading
+          await fetchProfile(initialSession.user.id);
         }
       } catch (error) {
-        console.error("Erro na inicialização do Auth:", error);
+        console.error("Erro na inicialização:", error);
       } finally {
-        // 🔥 GARANTE que o loading pare, mesmo se o banco de dados falhar
         if (mounted) setLoading(false);
       }
     }
 
     initializeAuth();
 
-    // Ouvinte para mudanças de estado (Login, Logout, etc)
+    // 2. Ouvinte de estado mais inteligente
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, currentSession) => {
       if (!mounted) return;
 
-      if (event === 'SIGNED_OUT') {
-        setUser(null);
+      if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
+        if (currentSession) {
+          setSession(currentSession);
+          setUser(currentSession.user);
+          // Só busca o perfil se ele ainda não existir ou se o usuário mudou
+          if (!profile || profile.id !== currentSession.user.id) {
+            await fetchProfile(currentSession.user.id);
+          }
+        }
+      } else if (event === 'SIGNED_OUT') {
         setSession(null);
+        setUser(null);
         setProfile(null);
-        setLoading(false);
-        return;
       }
-
-      if (currentSession) {
-        setSession(currentSession);
-        setUser(currentSession.user);
-        await fetchProfile(currentSession.user.id);
-      }
-
-      // 🔥 Libera o ecrã sempre após processar a mudança
+      
       setLoading(false);
     });
 
@@ -104,21 +102,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       mounted = false;
       subscription.unsubscribe();
     };
-  }, []);
+  }, [fetchProfile, profile]); // Dependências corretas para evitar loops
 
   const signOut = async () => {
     setLoading(true);
     try {
-      await supabase.auth.signOut();
-    } catch (error) {
-      console.error("Erro ao sair:", error);
-    } finally {
-      // Limpeza manual de segurança
+      // Limpa os dados ANTES para evitar que o router tente carregar dados protegidos
       setProfile(null);
       setUser(null);
       setSession(null);
-      localStorage.clear(); // Limpa tokens antigos para evitar o loop de carregamento
-      setLoading(false);
+      
+      await supabase.auth.signOut();
+      localStorage.clear();
+      
+      // Redirecionamento limpo
+      window.location.replace('/login');
+    } catch (error) {
+      console.error("Erro ao sair:", error);
       window.location.href = '/login';
     }
   };
