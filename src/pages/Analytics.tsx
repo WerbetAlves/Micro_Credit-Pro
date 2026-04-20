@@ -35,13 +35,11 @@ export function Analytics() {
   });
 
   useEffect(() => {
-    // Garante que a busca só ocorre se o usuário estiver logado
     if (user && user.id) {
       fetchAnalyticsData(user.id);
     }
   }, [user]);
 
-  // Passamos o userId como parâmetro para o TypeScript saber que ele não é nulo aqui
   async function fetchAnalyticsData(userId: string) {
     setLoading(true);
     try {
@@ -56,8 +54,8 @@ export function Analytics() {
       if (loansError) throw loansError;
       if (instError) throw instError;
 
-      // Calculations
       if (!loans || !installments) throw new Error("Failed to fetch essential data.");
+      
       const totalPortfolio = loans.reduce((acc, l) => acc + Number(l.principal_amount), 0);
       
       const lateAmount = installments
@@ -75,7 +73,6 @@ export function Analytics() {
         .filter(i => i.status === 'upcoming' || i.status === 'late')
         .reduce((acc, i) => acc + Number(i.amount), 0);
 
-      // Status Distribution
       const statusCounts = loans.reduce((acc: Record<string, number>, l) => {
         acc[l.status] = (acc[l.status] || 0) + 1;
         return acc;
@@ -86,7 +83,6 @@ export function Analytics() {
         value
       }));
 
-      // Monthly Volume (Mocking grouping for now, ideally aggregation query)
       const monthlyData = loans.reduce((acc: Record<string, { month: string; amount: number }>, l) => {
         const month = new Date(l.created_at).toLocaleDateString([], { month: 'short' });
         if (!acc[month]) acc[month] = { month, amount: 0 };
@@ -98,7 +94,7 @@ export function Analytics() {
         totalPortfolio,
         delinquencyRate,
         expectedRevenue,
-        growthRate: 12.5, // Mock value
+        growthRate: 12.5,
         statusDistribution,
         monthlyVolume: Object.values(monthlyData),
       });
@@ -129,8 +125,6 @@ export function Analytics() {
         1. [Título curto] - [Explicação]
         2. [Título curto] - [Explicação]
         3. [Título curto] - [Explicação]
-        
-        Mantenha o tom profissional e focado em lucro e mitigação de risco.
       `;
 
       const response = await ai.models.generateContent({
@@ -138,11 +132,10 @@ export function Analytics() {
         contents: prompt,
       });
 
-      // Garantimos que passamos uma string vazia caso text seja undefined
-      setAiInsight(response.text || "Insights gerados vazios. Tente novamente.");
+      setAiInsight(response.text || "Insights gerados vazios.");
     } catch (error) {
       console.error('Gemini Error:', (error as Error).message);
-      setAiInsight("Desculpe, não conseguimos conectar com o consultor de IA agora. Verifique sua chave de API.");
+      setAiInsight("Verifique sua chave de API do Gemini no painel do Vercel.");
     } finally {
       setAiLoading(false);
     }
@@ -164,7 +157,6 @@ export function Analytics() {
 
         <div className="px-4 lg:px-8 py-8 w-full space-y-8">
           
-          {/* AI Consultant Hero */}
           <motion.div 
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
@@ -187,11 +179,7 @@ export function Analytics() {
                   disabled={aiLoading}
                   className="group flex items-center gap-3 bg-slate-900 text-white px-8 py-4 rounded-2xl font-bold text-sm tracking-tight hover:bg-slate-800 transition-all active:scale-95 disabled:opacity-50"
                 >
-                  {aiLoading ? (
-                    <Zap className="size-4 animate-pulse text-amber-400" />
-                  ) : (
-                    <Sparkles className="size-4 text-emerald-400 group-hover:rotate-12 transition-transform" />
-                  )}
+                  {aiLoading ? <Zap className="size-4 animate-pulse text-amber-400" /> : <Sparkles className="size-4 text-emerald-400" />}
                   {aiLoading ? "Consultando Mentoria..." : "Gerar Insights de Negócio"}
                 </button>
               </div>
@@ -200,7 +188,7 @@ export function Analytics() {
                 {aiLoading ? (
                   <div className="flex flex-col items-center gap-4">
                     <div className="size-10 rounded-full border-4 border-emerald-500/20 border-t-emerald-500 animate-spin" />
-                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Processando dados da carteira...</p>
+                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Processando dados...</p>
                   </div>
                 ) : aiInsight ? (
                   <div className="text-slate-700 font-medium text-sm whitespace-pre-wrap leading-relaxed z-10">
@@ -209,7 +197,7 @@ export function Analytics() {
                 ) : (
                   <div className="text-center space-y-2 z-10">
                     <Target className="size-10 text-slate-200 mx-auto" />
-                    <p className="text-xs text-slate-400 font-medium">Clique no botão para iniciar a análise estratégica.</p>
+                    <p className="text-xs text-slate-400 font-medium">Clique no botão para análise estratégica.</p>
                   </div>
                 )}
                 <BrainCircuit className="absolute bottom-4 right-4 size-16 text-slate-200/50 z-0" />
@@ -217,7 +205,6 @@ export function Analytics() {
             </div>
           </motion.div>
 
-          {/* Strategic KPIs */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
             {[
               { label: 'Yield on Capital', value: '18.4%', icon: TrendingUp, color: 'text-emerald-500' },
@@ -243,7 +230,6 @@ export function Analytics() {
             ))}
           </div>
 
-          {/* Charts Grid */}
           <div className="grid lg:grid-cols-3 gap-6">
             <div className="lg:col-span-2 bg-white rounded-[2.5rem] p-8 border border-slate-50 shadow-sm">
               <h3 className="text-lg font-black text-slate-900 mb-8 uppercase tracking-tight flex items-center gap-2">
@@ -251,7 +237,8 @@ export function Analytics() {
                 Monthly Disbursement Volume
               </h3>
               <div className="h-[300px]">
-                <ResponsiveContainer width="100%" height="100%">
+                {/* 🔥 FIX: Adicionado minWidth={0} */}
+                <ResponsiveContainer width="100%" height="100%" minWidth={0}>
                   <BarChart data={stats.monthlyVolume}>
                     <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
                     <XAxis 
@@ -279,7 +266,8 @@ export function Analytics() {
             <div className="bg-slate-900 rounded-[2.5rem] p-8 text-white shadow-xl shadow-slate-200 overflow-hidden relative">
               <h3 className="text-lg font-black mb-8 uppercase tracking-tight">Portfolio Health</h3>
               <div className="h-[250px] relative z-10">
-                <ResponsiveContainer width="100%" height="100%">
+                {/* 🔥 FIX: Adicionado minWidth={0} */}
+                <ResponsiveContainer width="100%" height="100%" minWidth={0}>
                   <PieChart>
                     <Pie
                       data={stats.statusDistribution}
