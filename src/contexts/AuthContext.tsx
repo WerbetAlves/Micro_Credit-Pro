@@ -9,7 +9,7 @@ export interface Profile {
   avatar_url: string | null;
   is_admin: boolean;
   plan_type: 'free' | 'pro' | 'enterprise';
-  has_onboarded: boolean; // 🔥 Adicionado para controlar a animação de boas-vindas
+  has_onboarded: boolean; // 🔥 Controla a animação de boas-vindas
 }
 
 interface AuthContextType {
@@ -29,18 +29,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
 
+  // Função para buscar perfil com tratamento de erro
   async function fetchProfile(userId: string) {
     try {
       const { data, error } = await supabase
         .from('profiles')
         .select('*')
         .eq('id', userId)
-        .maybeSingle();
+        .maybeSingle(); 
         
       if (error) throw error;
       setProfile(data as Profile);
     } catch (error) {
-      console.error('Erro ao buscar perfil no AuthContext:', error);
+      console.error('Erro ao buscar perfil:', error);
       setProfile(null);
     }
   }
@@ -48,26 +49,37 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     let mounted = true;
 
-    async function getInitialSession() {
+    async function initializeAuth() {
       try {
-        const { data: { session } } = await supabase.auth.getSession();
+        // 1. Tenta recuperar a sessão atual do localStorage
+        const { data: { session: initialSession }, error: sessionError } = await supabase.auth.getSession();
+        
+        if (sessionError) {
+          console.error("Erro de sessão corrompida:", sessionError);
+          await supabase.auth.signOut();
+          throw sessionError;
+        }
+
         if (mounted) {
-          setSession(session);
-          setUser(session?.user ?? null);
-          if (session?.user) {
-            await fetchProfile(session.user.id);
+          setSession(initialSession);
+          setUser(initialSession?.user ?? null);
+          
+          if (initialSession?.user) {
+            await fetchProfile(initialSession.user.id);
           }
         }
       } catch (error) {
-        console.error("Auth init error:", error);
+        console.error("Erro na inicialização do Auth:", error);
       } finally {
+        // 🔥 GARANTE que o loading pare, mesmo se o banco de dados falhar
         if (mounted) setLoading(false);
       }
     }
 
-    getInitialSession();
+    initializeAuth();
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+    // Ouvinte para mudanças de estado (Login, Logout, etc)
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, currentSession) => {
       if (!mounted) return;
 
       if (event === 'SIGNED_OUT') {
@@ -78,13 +90,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return;
       }
 
-      setSession(session);
-      setUser(session?.user ?? null);
-      
-      if (session?.user) {
-        await fetchProfile(session.user.id);
+      if (currentSession) {
+        setSession(currentSession);
+        setUser(currentSession.user);
+        await fetchProfile(currentSession.user.id);
       }
-      
+
+      // 🔥 Libera o ecrã sempre após processar a mudança
       setLoading(false);
     });
 
@@ -95,13 +107,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const signOut = async () => {
+    setLoading(true);
     try {
-      setLoading(true);
       await supabase.auth.signOut();
+    } catch (error) {
+      console.error("Erro ao sair:", error);
     } finally {
+      // Limpeza manual de segurança
       setProfile(null);
       setUser(null);
       setSession(null);
+      localStorage.clear(); // Limpa tokens antigos para evitar o loop de carregamento
       setLoading(false);
       window.location.href = '/login';
     }
