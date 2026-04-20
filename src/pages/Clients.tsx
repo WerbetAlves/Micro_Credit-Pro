@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Search, Plus, User, Phone, MapPin, MoreVertical, Edit2, Trash2, X, AlertCircle } from 'lucide-react';
 import { Sidebar } from '../components/Sidebar';
-import { Header } from '../components/Header';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../lib/supabase';
@@ -47,7 +46,7 @@ export function Clients() {
   const [formLoading, setFormLoading] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
 
-  // Form states
+  // Form states - CORRIGIDO: Tipagem explícita para evitar erro de atribuição no status
   const [formData, setFormData] = useState({
     full_name: '',
     email: '',
@@ -55,7 +54,7 @@ export function Clients() {
     document_id: '',
     address: '',
     credit_score: 500,
-    status: 'active' as const
+    status: 'active' as 'active' | 'inactive' | 'blocked'
   });
 
   useEffect(() => {
@@ -112,13 +111,13 @@ export function Clients() {
         status: client.status
       });
     } else {
-      // --- LÓGICA DE BLOQUEIO DO SAAS ---
+      // Lógica de Bloqueio Baseada no Plano
       const userPlan = profile?.plan_type || 'free';
       const limit = PLAN_LIMITS[userPlan].maxClients;
 
       if (clients.length >= limit) {
         alert(
-          `Limite atingido! Seu plano ${PLAN_LIMITS[userPlan].label} permite apenas ${limit} clientes.\n\nFaça upgrade para continuar expandindo seu negócio!`
+          `Limite atingido! O seu plano ${PLAN_LIMITS[userPlan].label} permite apenas ${limit} clientes.\n\nFaça upgrade para adicionar clientes ilimitados!`
         );
         return;
       }
@@ -217,7 +216,7 @@ export function Clients() {
         </header>
 
         <div className="px-4 lg:px-8 py-8 w-full">
-          {/* Search & Stats */}
+          {/* Barra de Pesquisa e Indicador de Plano */}
           <div className="flex flex-col sm:flex-row gap-4 mb-8">
             <div className="flex-1 relative">
               <Search className="absolute left-4 top-1/2 -translate-y-1/2 size-5 text-slate-300" />
@@ -229,16 +228,14 @@ export function Clients() {
                 className="w-full pl-12 pr-4 py-4 bg-white border border-slate-100 rounded-[1.5rem] shadow-sm focus:ring-2 focus:ring-emerald-100 outline-none transition-all text-sm font-medium text-slate-600"
               />
             </div>
-            {/* Indicador de Plano (Opcional - Bom para UX) */}
             <div className="px-6 py-4 bg-white rounded-[1.5rem] border border-slate-100 flex items-center gap-3">
                <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
                <span className="text-xs font-bold text-slate-500 uppercase tracking-widest">
-                  Plano: {profile?.plan_type || 'Carregando...'}
+                  Plano: {profile?.plan_type || 'A carregar...'}
                </span>
             </div>
           </div>
 
-          {/* Clients List */}
           <div className="bg-white rounded-[2rem] shadow-sm border border-slate-50 overflow-hidden">
             <div className="overflow-x-auto">
               <table className="w-full text-left border-collapse">
@@ -281,7 +278,7 @@ export function Clients() {
                             </div>
                             <div className="min-w-0">
                               <p className="text-sm font-bold text-slate-900 truncate">{client.full_name}</p>
-                              <p className="text-xs text-slate-400 truncate">{client.email || 'No email'}</p>
+                              <p className="text-xs text-slate-400 truncate">{client.email || 'Sem e-mail'}</p>
                             </div>
                           </div>
                         </td>
@@ -343,7 +340,7 @@ export function Clients() {
         </div>
       </main>
 
-      {/* Client Modal */}
+      {/* Modal de Cliente */}
       <AnimatePresence>
         {isModalOpen && (
           <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-6">
@@ -386,7 +383,7 @@ export function Clients() {
                         value={formData.full_name}
                         onChange={e => setFormData({...formData, full_name: e.target.value})}
                         className="w-full px-4 py-3.5 bg-slate-50 border-none rounded-2xl focus:ring-2 focus:ring-emerald-500 outline-none text-sm font-medium text-slate-900 transition-all" 
-                        placeholder="John Borrower"
+                        placeholder="Nome Completo"
                       />
                     </div>
                     <div className="space-y-2">
@@ -396,7 +393,7 @@ export function Clients() {
                         value={formData.email}
                         onChange={e => setFormData({...formData, email: e.target.value})}
                         className="w-full px-4 py-3.5 bg-slate-50 border-none rounded-2xl focus:ring-2 focus:ring-emerald-500 outline-none text-sm font-medium text-slate-900 transition-all"
-                        placeholder="john@example.com"
+                        placeholder="email@exemplo.com"
                       />
                     </div>
                     <div className="space-y-2">
@@ -406,7 +403,7 @@ export function Clients() {
                         value={formData.phone}
                         onChange={e => setFormData({...formData, phone: e.target.value})}
                         className="w-full px-4 py-3.5 bg-slate-50 border-none rounded-2xl focus:ring-2 focus:ring-emerald-500 outline-none text-sm font-medium text-slate-900 transition-all"
-                        placeholder="+55 11 98888-8888"
+                        placeholder="+351 912 345 678"
                       />
                     </div>
                     <div className="space-y-2">
@@ -415,7 +412,7 @@ export function Clients() {
                         value={formData.document_id}
                         onChange={e => setFormData({...formData, document_id: e.target.value})}
                         className="w-full px-4 py-3.5 bg-slate-50 border-none rounded-2xl focus:ring-2 focus:ring-emerald-500 outline-none text-sm font-medium text-slate-900 transition-all"
-                        placeholder="000.000.000-00"
+                        placeholder="NIF / Documento"
                       />
                     </div>
                   </div>
@@ -428,7 +425,7 @@ export function Clients() {
                         value={formData.address}
                         onChange={e => setFormData({...formData, address: e.target.value})}
                         className="w-full pl-11 pr-4 py-3.5 bg-slate-50 border-none rounded-2xl focus:ring-2 focus:ring-emerald-500 outline-none text-sm font-medium text-slate-900 transition-all"
-                        placeholder="Av. Paulista, 1000 - SP"
+                        placeholder="Morada completa"
                       />
                     </div>
                   </div>
