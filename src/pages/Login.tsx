@@ -17,16 +17,24 @@ export function Login() {
     setLoading(true);
     setError(null);
 
-    const { error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
+    try {
+      const { error } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
 
-    if (error) {
-      setError(error.message);
+      if (error) {
+        setError(error.message);
+        setLoading(false);
+      } else {
+        navigate('/');
+      }
+    } catch (err: any) {
+      const message = err.message === 'Failed to fetch' 
+        ? 'Erro de conexão: Verifique se o endereço do Supabase está correto e se o domínio da aplicação está autorizado no painel do Supabase (CORS/Redirect URL).'
+        : (err.message || 'Erro inesperado ao entrar.');
+      setError(message);
       setLoading(false);
-    } else {
-      navigate('/');
     }
   };
 

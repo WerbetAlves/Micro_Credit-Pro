@@ -47,7 +47,7 @@ export function PortfolioHealth() {
         <div className="flex items-end gap-3">
           <span className="text-4xl lg:text-5xl font-black text-slate-900 tracking-tighter">{health.toFixed(1)}%</span>
           <span className="text-xs text-emerald-600 font-black pb-1 lg:pb-2 uppercase tracking-widest">
-            {health > 90 ? t.optimal : 'Alert'}
+            {health > 90 ? t.optimal : t.alert}
           </span>
         </div>
         

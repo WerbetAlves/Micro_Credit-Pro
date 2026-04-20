@@ -17,6 +17,12 @@ interface Loan {
   interest_rate: number;
   interest_type: 'annual' | 'monthly';
   term_months: number;
+  payment_frequency: 'daily' | 'weekly' | 'biweekly' | 'monthly';
+  payment_days: string[];
+  first_installment_date: string;
+  due_date: string;
+  category: string;
+  notes: string;
   status: 'pending' | 'active' | 'repaid' | 'default';
   monthly_installment: number;
   total_repayment: number;
@@ -63,6 +69,12 @@ export function Loans() {
     interest_rate: number;
     interest_type: 'annual' | 'monthly';
     term_months: number;
+    payment_frequency: 'daily' | 'weekly' | 'biweekly' | 'monthly';
+    payment_days: string[];
+    first_installment_date: string;
+    due_date: string;
+    category: string;
+    notes: string;
     status: 'pending' | 'active' | 'repaid' | 'default';
   }>({
     client_id: '',
@@ -70,6 +82,12 @@ export function Loans() {
     interest_rate: 4.25,
     interest_type: 'monthly',
     term_months: 12,
+    payment_frequency: 'monthly',
+    payment_days: [],
+    first_installment_date: new Date().toISOString().split('T')[0],
+    due_date: new Date(new Date().setMonth(new Date().getMonth() + 1)).toISOString().split('T')[0],
+    category: 'Microcrédito',
+    notes: '',
     status: 'pending'
   });
 
@@ -143,6 +161,12 @@ export function Loans() {
         interest_rate: loan.interest_rate,
         interest_type: loan.interest_type || 'annual',
         term_months: loan.term_months,
+        payment_frequency: loan.payment_frequency || 'monthly',
+        payment_days: loan.payment_days || [],
+        first_installment_date: loan.first_installment_date || new Date().toISOString().split('T')[0],
+        due_date: loan.due_date || new Date().toISOString().split('T')[0],
+        category: loan.category || 'Microcrédito',
+        notes: loan.notes || '',
         status: loan.status
       });
     } else {
@@ -153,6 +177,12 @@ export function Loans() {
         interest_rate: 4.25,
         interest_type: 'monthly',
         term_months: 12,
+        payment_frequency: 'monthly',
+        payment_days: [],
+        first_installment_date: new Date().toISOString().split('T')[0],
+        due_date: new Date(new Date().setMonth(new Date().getMonth() + 1)).toISOString().split('T')[0],
+        category: 'Microcrédito',
+        notes: '',
         status: 'pending'
       });
     }
@@ -160,12 +190,25 @@ export function Loans() {
     setIsModalOpen(true);
   };
 
-  const calculateLoan = (principal: number, rate: number, term: number, type: 'annual' | 'monthly') => {
+  const calculateLoan = (principal: number, rate: number, term: number, type: 'annual' | 'monthly', frequency: string = 'monthly') => {
     if (!principal || !term || isNaN(principal) || isNaN(term)) {
       return { totalRepay: 0, monthlyInstal: 0 };
     }
-    const monthlyRate = type === 'monthly' ? (rate / 100) : (rate / 100) / 12;
-    const totalRepay = principal * Math.pow(1 + monthlyRate, term);
+
+    let interestFactor = 0;
+    const baseRate = type === 'monthly' ? rate : rate / 12;
+
+    if (frequency === 'monthly') {
+      interestFactor = (baseRate / 100) * term;
+    } else if (frequency === 'daily') {
+      interestFactor = (baseRate / 30 / 100) * term;
+    } else if (frequency === 'weekly') {
+      interestFactor = (baseRate / 4 / 100) * term;
+    } else if (frequency === 'biweekly') {
+      interestFactor = (baseRate / 2 / 100) * term;
+    }
+
+    const totalRepay = principal + (principal * interestFactor);
     const monthlyInstal = totalRepay / term;
     return { totalRepay, monthlyInstal };
   };
@@ -180,7 +223,8 @@ export function Loans() {
       formData.principal_amount, 
       formData.interest_rate, 
       formData.term_months,
-      formData.interest_type
+      formData.interest_type,
+      formData.payment_frequency
     );
 
     const loanData = {
@@ -205,7 +249,7 @@ export function Loans() {
           .single();
         if (error) throw error;
 
-        // Record payout transaction for new loans
+        // Record payout transaction and generate installments for new loans
         if (newLoan) {
           await supabase.from('transactions').insert({
             user_id: user.id,
@@ -216,9 +260,52 @@ export function Loans() {
             amount: newLoan.principal_amount,
             description: `Empréstimo concedido: ${newLoan.id.split('-')[0]}`
           });
+
+          // Generate Installments
+          const installmentsList = [];
+          let currentDate = new Date(formData.due_date);
+          let installmentsCreated = 0;
+          const numDuration = formData.term_months;
+          const frequency = formData.payment_frequency;
+          const paymentDays = formData.payment_days;
+
+          while (installmentsCreated < numDuration) {
+            let isPaymentDay = true;
+            if (frequency === 'daily' && paymentDays.length > 0) {
+              const dayName = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'][currentDate.getDay()];
+              isPaymentDay = paymentDays.includes(dayName);
+            }
+
+            if (isPaymentDay) {
+              installmentsList.push({
+                loan_id: newLoan.id,
+                amount: monthlyInstal,
+                due_date: currentDate.toISOString().split('T')[0],
+                status: 'upcoming'
+              });
+              installmentsCreated++;
+            }
+
+            if (installmentsCreated >= numDuration) break;
+
+            // Increment date based on frequency
+            if (frequency === 'monthly') {
+              currentDate.setMonth(currentDate.getMonth() + 1);
+            } else if (frequency === 'daily') {
+              currentDate.setDate(currentDate.getDate() + 1);
+            } else if (frequency === 'weekly') {
+              currentDate.setDate(currentDate.getDate() + 7);
+            } else {
+              currentDate.setDate(currentDate.getDate() + 15);
+            }
+          }
+
+          if (installmentsList.length > 0) {
+            await supabase.from('installments').insert(installmentsList);
+          }
         }
       }
-      
+
       setIsModalOpen(false);
       fetchLoans();
     } catch (err: any) {
@@ -397,7 +484,7 @@ export function Loans() {
               initial={{ opacity: 0, scale: 0.95, y: 20 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: 20 }}
-              className="relative w-full max-w-lg bg-white rounded-[2.5rem] shadow-2xl overflow-hidden shadow-emerald-900/10 border border-white"
+              className="relative w-full max-w-2xl bg-white rounded-[2.5rem] shadow-2xl overflow-hidden shadow-emerald-900/10 border border-white max-h-[90vh] overflow-y-auto"
             >
               <div className="p-8 lg:p-10">
                 <div className="flex items-center justify-between mb-8">
@@ -487,22 +574,55 @@ export function Loans() {
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
                     <div className="space-y-2">
-                      <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400 ml-1">{t.term} ({t.months})</label>
-                      <div className="flex gap-2">
-                        <input 
-                          type="number"
-                          min="1"
-                          max="120"
-                          required
-                          value={formData.term_months || ''}
-                          onFocus={e => e.target.select()}
-                          onChange={e => setFormData({...formData, term_months: Number(e.target.value)})}
-                          className="flex-1 px-4 py-4 bg-slate-50 border-none rounded-2xl focus:ring-2 focus:ring-emerald-500 outline-none text-sm font-bold text-slate-900 transition-all"
-                        />
-                      </div>
+                       <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400 ml-1">{t.term} ({t.months})</label>
+                       <div className="flex gap-2">
+                         <input 
+                           type="number"
+                           min="1"
+                           max="120"
+                           required
+                           value={formData.term_months || ''}
+                           onFocus={e => e.target.select()}
+                           onChange={e => setFormData({...formData, term_months: Number(e.target.value)})}
+                           className="flex-1 px-4 py-4 bg-slate-50 border-none rounded-2xl focus:ring-2 focus:ring-emerald-500 outline-none text-sm font-bold text-slate-900 transition-all"
+                         />
+                       </div>
                     </div>
                     <div className="space-y-2">
-                      <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400 ml-1 md:opacity-0">{t.loanStatus}</label>
+                      <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400 ml-1">{t.category}</label>
+                      <select 
+                        value={formData.category}
+                        onChange={e => setFormData({...formData, category: e.target.value})}
+                        className="w-full px-4 py-4 bg-slate-50 border-none rounded-2xl focus:ring-2 focus:ring-emerald-500 outline-none text-sm font-bold text-slate-900 transition-all appearance-none cursor-pointer"
+                      >
+                        <option value="Microcrédito">Microcrédito</option>
+                        <option value="Pessoal">Pessoal</option>
+                        <option value="Comercial">Comercial</option>
+                        <option value="Emergencial">Emergencial</option>
+                        <option value="Educação">Educação</option>
+                        <option value="Saúde">Saúde</option>
+                        <option value="Outros">Outros</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                    <div className="space-y-2">
+                      <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400 ml-1">{t.paymentFrequency}</label>
+                      <select 
+                        required
+                        value={formData.payment_frequency}
+                        onChange={e => setFormData({...formData, payment_frequency: e.target.value as any})}
+                        className="w-full px-4 py-4 bg-slate-50 border-none rounded-2xl focus:ring-2 focus:ring-emerald-500 outline-none text-xs font-bold text-slate-900 transition-all appearance-none cursor-pointer"
+                      >
+                        <option value="daily">{t.daily}</option>
+                        <option value="weekly">{t.weekly}</option>
+                        <option value="biweekly">{t.biweekly}</option>
+                        <option value="monthly">{t.monthly_f}</option>
+                      </select>
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400 ml-1">{t.loanStatus}</label>
                       <select 
                         value={formData.status}
                         onChange={e => setFormData({...formData, status: e.target.value as any})}
@@ -514,6 +634,72 @@ export function Loans() {
                         <option value="default">{t.default}</option>
                       </select>
                     </div>
+                  </div>
+
+                  {(formData.payment_frequency === 'daily' || formData.payment_frequency === 'weekly' || formData.payment_frequency === 'biweekly') && (
+                    <div className="space-y-3">
+                      <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400 ml-1">{t.selectDays}</label>
+                      <div className="flex flex-wrap gap-2">
+                        {['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'].map(day => (
+                          <button
+                            key={day}
+                            type="button"
+                            onClick={() => {
+                              if (formData.payment_frequency === 'daily') {
+                                const days = formData.payment_days.includes(day)
+                                  ? formData.payment_days.filter(d => d !== day)
+                                  : [...formData.payment_days, day];
+                                setFormData({ ...formData, payment_days: days });
+                              } else {
+                                // Para semanal e quinzenal, permite apenas um dia
+                                setFormData({ ...formData, payment_days: [day] });
+                              }
+                            }}
+                            className={cn(
+                              "px-3 py-2 rounded-xl text-[10px] font-bold uppercase tracking-widest transition-all text-center min-w-[50px]",
+                              formData.payment_days.includes(day)
+                                ? "bg-emerald-500 text-white shadow-lg shadow-emerald-200"
+                                : "bg-slate-50 text-slate-400 hover:bg-slate-100"
+                            )}
+                          >
+                            {t[day]}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                    <div className="space-y-2">
+                       <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400 ml-1">{t.startDate}</label>
+                       <input 
+                         type="date"
+                         required
+                         value={formData.first_installment_date}
+                         onChange={e => setFormData({...formData, first_installment_date: e.target.value})}
+                         className="w-full px-4 py-4 bg-slate-50 border-none rounded-2xl focus:ring-2 focus:ring-emerald-500 outline-none text-sm font-bold text-slate-900 transition-all"
+                       />
+                    </div>
+                    <div className="space-y-2">
+                       <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400 ml-1">{t.firstInstallmentDue}</label>
+                       <input 
+                         type="date"
+                         required
+                         value={formData.due_date}
+                         onChange={e => setFormData({...formData, due_date: e.target.value})}
+                         className="w-full px-4 py-4 bg-slate-50 border-none rounded-2xl focus:ring-2 focus:ring-emerald-500 outline-none text-sm font-bold text-slate-900 transition-all"
+                       />
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400 ml-1">{t.observations}</label>
+                    <textarea 
+                      value={formData.notes}
+                      onChange={e => setFormData({...formData, notes: e.target.value})}
+                      className="w-full px-4 py-4 bg-slate-50 border-none rounded-2xl focus:ring-2 focus:ring-emerald-500 outline-none text-sm font-bold text-slate-900 transition-all min-h-[80px] resize-none"
+                      placeholder="..."
+                    />
                   </div>
 
                   <div className="p-6 bg-slate-900 rounded-3xl text-white">
@@ -579,7 +765,7 @@ export function Loans() {
                   </div>
                   <div>
                     <h3 className="text-lg font-black text-slate-900 uppercase tracking-tight">
-                      Contrato de Empréstimo
+                      {t.loanContract}
                     </h3>
                     <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">
                       ID: {selectedLoanForContract.id.split('-')[0]} • {selectedLoanForContract.clients?.full_name}
@@ -590,18 +776,18 @@ export function Loans() {
                    {selectedLoanForContract.legal_validation_status === 'validated' && (
                      <div className="hidden sm:flex items-center gap-1.5 px-3 py-1 bg-emerald-50 text-emerald-600 rounded-full text-[10px] font-black uppercase tracking-widest border border-emerald-100">
                        <CheckCircle className="size-3" />
-                       Validado Juridicamente
+                       {t.legallyValidated}
                      </div>
                    )}
                    {selectedLoanForContract.sent_to_client && (
                      <div className="hidden sm:flex items-center gap-1.5 px-3 py-1 bg-blue-50 text-blue-600 rounded-full text-[10px] font-black uppercase tracking-widest border border-blue-100">
                        <Send className="size-3" />
-                       Enviado ao Cliente
+                       {t.sentToClient}
                      </div>
                    )}
                    <button onClick={() => setIsContractModalOpen(false)} className="p-2 text-slate-400 hover:text-slate-600">
-                    <X className="size-6" />
-                  </button>
+                     <X className="size-6" />
+                   </button>
                 </div>
               </div>
 
@@ -609,7 +795,7 @@ export function Loans() {
               <div className="flex-1 overflow-y-auto p-8 lg:p-12 bg-slate-50/50">
                 <div className="bg-white p-10 lg:p-16 rounded-[2rem] shadow-sm border border-slate-100 max-w-3xl mx-auto min-h-[1000px]">
                   <div className="prose prose-slate prose-sm sm:prose-base max-w-none">
-                    <Markdown>{selectedLoanForContract.contract_content || 'Gerando contrato...'}</Markdown>
+                    <Markdown>{selectedLoanForContract.contract_content || t.processing}</Markdown>
                   </div>
                 </div>
               </div>
@@ -618,7 +804,7 @@ export function Loans() {
               <div className="p-6 border-t border-slate-100 bg-white flex flex-col sm:flex-row gap-4 items-center justify-between">
                 <div className="flex items-center gap-4">
                   <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest max-w-[200px]">
-                    Este contrato foi gerado via IA e é armazenado de forma segura em nossos servidores.
+                    {t.contractAiNotice}
                   </p>
                 </div>
                 
@@ -629,16 +815,16 @@ export function Loans() {
                     className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-6 py-3 bg-slate-900 text-white rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-slate-800 transition-all disabled:opacity-50"
                   >
                     {isValidatingContract ? (
-                      "Validando..."
+                      t.validating
                     ) : selectedLoanForContract.legal_validation_status === 'validated' ? (
                       <>
                         <CheckCircle className="size-4" />
-                        Validado
+                        {t.validated}
                       </>
                     ) : (
                       <>
                         <Landmark className="size-4" />
-                        Validar Juridicamente
+                        {t.validateLegally}
                       </>
                     )}
                   </button>
@@ -647,7 +833,7 @@ export function Loans() {
                     className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-6 py-3 bg-white border border-slate-200 text-slate-600 rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-slate-50 transition-all"
                   >
                     <ExternalLink className="size-4" />
-                    Exportar PDF
+                    {t.exportPdf}
                   </button>
                 </div>
               </div>

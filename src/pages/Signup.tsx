@@ -19,23 +19,31 @@ export function Signup() {
     setLoading(true);
     setError(null);
 
-    const { error } = await supabase.auth.signUp({
-      email,
-      password,
-      options: {
-        data: {
-          full_name: fullName,
+    try {
+      const { error } = await supabase.auth.signUp({
+        email,
+        password,
+        options: {
+          data: {
+            full_name: fullName,
+          }
         }
-      }
-    });
+      });
 
-    if (error) {
-      setError(error.message);
+      if (error) {
+        setError(error.message);
+        setLoading(false);
+      } else {
+        setSuccess(true);
+        setLoading(false);
+        setTimeout(() => navigate('/login'), 3000);
+      }
+    } catch (err: any) {
+      const message = err.message === 'Failed to fetch'
+        ? 'Erro de conexão: Verifique se o endereço do Supabase está correto e se o domínio da aplicação está autorizado no painel do Supabase (CORS/Redirect URL).'
+        : (err.message || 'Erro inesperado ao criar conta.');
+      setError(message);
       setLoading(false);
-    } else {
-      setSuccess(true);
-      setLoading(false);
-      setTimeout(() => navigate('/login'), 3000);
     }
   };
 

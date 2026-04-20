@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Search, Bell, Plus, Menu, Zap } from 'lucide-react';
+import { Search, Bell, Plus, Menu, Zap, User, Wallet } from 'lucide-react';
 import { Sidebar } from '../components/Sidebar';
 import { Header } from '../components/Header';
 import { AIAssistantDashboard } from '../components/AIAssistantDashboard';
@@ -9,6 +9,7 @@ import { UpcomingCollections } from '../components/UpcomingCollections';
 import { RecentActivity } from '../components/RecentActivity';
 import { PortfolioHealth } from '../components/PortfolioHealth';
 import { OnboardingChecklist } from '../components/OnboardingChecklist';
+import { WelcomeAnimation } from '../components/WelcomeAnimation';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useAuth } from '../contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
@@ -34,6 +35,21 @@ export function Dashboard() {
     hasLoans: false
   });
   const [errorVisible, setErrorVisible] = useState<string | null>(null);
+  const [showWelcome, setShowWelcome] = useState(false);
+
+  useEffect(() => {
+    const hasSeenWelcome = localStorage.getItem(`welcome_seen_${user?.id}`);
+    if (!hasSeenWelcome && user) {
+      setShowWelcome(true);
+    }
+  }, [user]);
+
+  const handleWelcomeComplete = () => {
+    setShowWelcome(false);
+    if (user) {
+      localStorage.setItem(`welcome_seen_${user.id}`, 'true');
+    }
+  };
 
   useEffect(() => {
     fetchDashboardStats();
@@ -76,8 +92,9 @@ export function Dashboard() {
       // 3. Busca Contagem de Clientes (para o Onboarding)
       const { count: clientsCount } = await supabase
         .from('clients')
-        .select('*', { count: 'exact', head: true })
-        .eq('user_id', user.id);
+        .select('id', { count: 'exact' })
+        .eq('user_id', user.id)
+        .limit(1);
 
       // 4. Lucro Mensal (Cálculo robusto sem join complexo)
       let monthlyP = 0;
@@ -125,6 +142,7 @@ export function Dashboard() {
 
   return (
     <div className="flex min-h-screen bg-[#f8fafc] overflow-x-hidden">
+      {showWelcome && <WelcomeAnimation onComplete={handleWelcomeComplete} />}
       <Sidebar isOpen={isSidebarOpen} onClose={() => setIsSidebarOpen(false)} />
 
       <main className="flex-1 lg:ml-72 min-h-screen pb-20 w-full transition-all duration-300">
@@ -136,7 +154,7 @@ export function Dashboard() {
                 profile.plan_type === 'free' ? "bg-slate-400" : "bg-emerald-500"
               )} />
               <span className="text-[10px] font-black uppercase tracking-widest text-slate-600">
-                Plano {profile.plan_type}
+                {t.planLabel} {profile.plan_type}
               </span>
             </div>
           )}
@@ -144,6 +162,46 @@ export function Dashboard() {
 
         <div className="px-4 md:px-6 lg:px-8 py-6 lg:py-10 w-full max-w-[1600px] mx-auto space-y-8 lg:space-y-12 transition-all">
           
+          {/* Quick Actions Bar */}
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+            <button 
+              onClick={scrollToSimulator}
+              className="group p-4 bg-white rounded-3xl border border-slate-50 shadow-sm hover:shadow-xl hover:shadow-emerald-100/50 transition-all flex flex-col items-center text-center space-y-3"
+            >
+              <div className="w-12 h-12 rounded-2xl bg-emerald-500 text-white flex items-center justify-center group-hover:scale-110 transition-transform shadow-lg shadow-emerald-200">
+                <Plus className="size-6" />
+              </div>
+              <span className="text-[10px] font-black text-slate-700 uppercase tracking-widest">{t.issueLoan || 'Novo Empréstimo'}</span>
+            </button>
+            <button 
+              onClick={() => navigate('/clients')}
+              className="group p-4 bg-white rounded-3xl border border-slate-50 shadow-sm hover:shadow-xl hover:shadow-primary-100/50 transition-all flex flex-col items-center text-center space-y-3"
+            >
+              <div className="w-12 h-12 rounded-2xl bg-primary-500 text-white flex items-center justify-center group-hover:scale-110 transition-transform shadow-lg shadow-primary-200">
+                <User className="size-6" />
+              </div>
+              <span className="text-[10px] font-black text-slate-700 uppercase tracking-widest">{t.addClient}</span>
+            </button>
+            <button 
+              onClick={() => navigate('/payments')}
+              className="group p-4 bg-white rounded-3xl border border-slate-50 shadow-sm hover:shadow-xl hover:shadow-amber-100/50 transition-all flex flex-col items-center text-center space-y-3"
+            >
+              <div className="w-12 h-12 rounded-2xl bg-amber-500 text-white flex items-center justify-center group-hover:scale-110 transition-transform shadow-lg shadow-amber-200">
+                <Zap className="size-6" />
+              </div>
+              <span className="text-[10px] font-black text-slate-700 uppercase tracking-widest">{t.manageInstallments}</span>
+            </button>
+            <button 
+              onClick={() => navigate('/financial')}
+              className="group p-4 bg-white rounded-3xl border border-slate-50 shadow-sm hover:shadow-xl hover:shadow-blue-100/50 transition-all flex flex-col items-center text-center space-y-3"
+            >
+              <div className="w-12 h-12 rounded-2xl bg-blue-500 text-white flex items-center justify-center group-hover:scale-110 transition-transform shadow-lg shadow-blue-200">
+                <Wallet className="size-6" />
+              </div>
+              <span className="text-[10px] font-black text-slate-700 uppercase tracking-widest">{t.wallets}</span>
+            </button>
+          </div>
+
           <OnboardingChecklist 
             hasWallets={stats.hasWallets}
             hasClients={stats.hasClients}

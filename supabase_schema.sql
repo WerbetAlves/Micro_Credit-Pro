@@ -7,6 +7,13 @@ CREATE TABLE IF NOT EXISTS public.profiles (
     full_name TEXT NOT NULL,
     email TEXT UNIQUE NOT NULL,
     avatar_url TEXT,
+    is_admin BOOLEAN DEFAULT false,
+    plan_type TEXT DEFAULT 'free' CHECK (plan_type IN ('free', 'pro', 'enterprise')),
+    business_name TEXT,
+    document_id TEXT, -- CPF/CNPJ
+    phone TEXT,
+    address TEXT,
+    payment_methods JSONB DEFAULT '[]'::jsonb,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 

@@ -1,4 +1,5 @@
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { useEffect } from 'react';
 import { Dashboard } from './pages/Dashboard';
 import { Clients } from './pages/Clients';
 import { Loans } from './pages/Loans';
@@ -8,11 +9,16 @@ import { Analytics } from './pages/Analytics';
 import { Settings } from './pages/Settings';
 import { Calendar } from './pages/Calendar';
 import { Support } from './pages/Support';
+import { Admin } from './pages/Admin';
 import { Login } from './pages/Login';
 import { Signup } from './pages/Signup';
 import { ProtectedRoute } from './components/ProtectedRoute';
 
 export default function App() {
+  useEffect(() => {
+    console.log('🌐 App Origin (Use for Supabase CORS/Redirect):', window.location.origin);
+  }, []);
+
   return (
     <Router>
       <Routes>
@@ -85,6 +91,14 @@ export default function App() {
           element={
             <ProtectedRoute>
               <Support />
+            </ProtectedRoute>
+          } 
+        />
+        <Route 
+          path="/admin" 
+          element={
+            <ProtectedRoute>
+              <Admin />
             </ProtectedRoute>
           } 
         />

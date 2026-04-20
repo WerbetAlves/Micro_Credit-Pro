@@ -26,6 +26,10 @@ interface Client {
   phone: string;
   document_id: string | null;
   address: string | null;
+  city: string | null;
+  state: string | null;
+  reference: string | null;
+  observations: string | null;
   credit_score: number;
   status: 'active' | 'inactive' | 'blocked';
   created_at: string;
@@ -46,13 +50,25 @@ export function Clients() {
   const [formLoading, setFormLoading] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
 
-  // Form states - CORRIGIDO: Tipagem explícita para evitar erro de atribuição no status
-  const [formData, setFormData] = useState({
+  // Form states
+  const [formData, setFormData] = useState<{
+    full_name: string;
+    email: string;
+    phone: string;
+    document_id: string;
+    address: string;
+    credit_score: number;
+    status: 'active' | 'inactive' | 'blocked';
+  }>({
     full_name: '',
     email: '',
     phone: '',
     document_id: '',
     address: '',
+    city: '',
+    state: '',
+    reference: '',
+    observations: '',
     credit_score: 500,
     status: 'active' as 'active' | 'inactive' | 'blocked'
   });
@@ -107,18 +123,17 @@ export function Clients() {
         phone: client.phone,
         document_id: client.document_id || '',
         address: client.address || '',
+        city: client.city || '',
+        state: client.state || '',
+        reference: client.reference || '',
+        observations: client.observations || '',
         credit_score: client.credit_score,
         status: client.status
       });
     } else {
-      // Lógica de Bloqueio Baseada no Plano
-      const userPlan = profile?.plan_type || 'free';
-      const limit = PLAN_LIMITS[userPlan].maxClients;
-
-      if (clients.length >= limit) {
-        alert(
-          `Limite atingido! O seu plano ${PLAN_LIMITS[userPlan].label} permite apenas ${limit} clientes.\n\nFaça upgrade para adicionar clientes ilimitados!`
-        );
+      // Bloqueio de Plano Grátis
+      if ((profile?.plan_type || 'free') === 'free' && clients.length >= 3) {
+        alert("Limite de 3 clientes atingido no Plano Gratuito. Faça upgrade para adicionar clientes ilimitados!");
         return;
       }
 
@@ -129,6 +144,10 @@ export function Clients() {
         phone: '',
         document_id: '',
         address: '',
+        city: '',
+        state: '',
+        reference: '',
+        observations: '',
         credit_score: 500,
         status: 'active'
       });
@@ -150,9 +169,11 @@ export function Clients() {
 
     try {
       if (editingClient) {
+        // Excluir user_id do update para evitar erros de RLS
+        const { user_id, ...updateData } = clientData;
         const { error } = await supabase
           .from('clients')
-          .update(clientData)
+          .update(updateData)
           .eq('id', editingClient.id);
         if (error) throw error;
       } else {
@@ -278,7 +299,7 @@ export function Clients() {
                             </div>
                             <div className="min-w-0">
                               <p className="text-sm font-bold text-slate-900 truncate">{client.full_name}</p>
-                              <p className="text-xs text-slate-400 truncate">{client.email || 'Sem e-mail'}</p>
+                              <p className="text-xs text-slate-400 truncate">{client.email || 'No email'}</p>
                             </div>
                           </div>
                         </td>
@@ -313,6 +334,18 @@ export function Clients() {
                         </td>
                         <td className="px-6 py-5 text-right">
                           <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                             <button 
+                              onClick={() => {
+                                const phone = client.phone.replace(/\D/g, '');
+                                window.open(`https://wa.me/55${phone}`, '_blank');
+                              }}
+                              className="p-2 text-green-500 hover:bg-green-50 rounded-xl transition-all"
+                              title="WhatsApp"
+                             >
+                               <svg className="size-5 fill-current" viewBox="0 0 24 24">
+                                 <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.412.247-.694.247-1.289.173-1.412-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.414 0 .018 5.393 0 12.029c0 2.119.554 4.187 1.605 6.006L0 24l6.117-1.605a11.79 11.79 0 00(5.925 1.588h.005c6.632 0 12.031-5.391 12.036-12.029a11.85 11.85 0 00-3.527-8.513z"/>
+                               </svg>
+                             </button>
                             <button 
                               onClick={() => handleOpenModal(client)}
                               className="p-2 text-slate-400 hover:text-emerald-500 transition-colors"
@@ -355,7 +388,7 @@ export function Clients() {
               initial={{ opacity: 0, scale: 0.95, y: 20 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: 20 }}
-              className="relative w-full max-w-lg bg-white rounded-[2.5rem] shadow-2xl overflow-hidden shadow-emerald-900/10 border border-white"
+              className="relative w-full max-w-2xl bg-white rounded-[2.5rem] shadow-2xl overflow-hidden shadow-emerald-900/10 border border-white max-h-[90vh] overflow-y-auto"
             >
               <div className="p-8 lg:p-10">
                 <div className="flex items-center justify-between mb-8">
@@ -425,9 +458,51 @@ export function Clients() {
                         value={formData.address}
                         onChange={e => setFormData({...formData, address: e.target.value})}
                         className="w-full pl-11 pr-4 py-3.5 bg-slate-50 border-none rounded-2xl focus:ring-2 focus:ring-emerald-500 outline-none text-sm font-medium text-slate-900 transition-all"
-                        placeholder="Morada completa"
+                        placeholder="Av. Paulista, 1000 - SP"
                       />
                     </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                    <div className="space-y-2">
+                      <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400 ml-1">{t.city}</label>
+                      <input 
+                        value={formData.city}
+                        onChange={e => setFormData({...formData, city: e.target.value})}
+                        className="w-full px-4 py-3.5 bg-slate-50 border-none rounded-2xl focus:ring-2 focus:ring-emerald-500 outline-none text-sm font-medium text-slate-900 transition-all"
+                        placeholder="São Paulo"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400 ml-1">{t.state}</label>
+                      <input 
+                        value={formData.state}
+                        onChange={e => setFormData({...formData, state: e.target.value})}
+                        className="w-full px-4 py-3.5 bg-slate-50 border-none rounded-2xl focus:ring-2 focus:ring-emerald-500 outline-none text-sm font-medium text-slate-900 transition-all"
+                        placeholder="SP"
+                        maxLength={2}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400 ml-1">{t.reference}</label>
+                    <input 
+                      value={formData.reference}
+                      onChange={e => setFormData({...formData, reference: e.target.value})}
+                      className="w-full px-4 py-3.5 bg-slate-50 border-none rounded-2xl focus:ring-2 focus:ring-emerald-500 outline-none text-sm font-medium text-slate-900 transition-all"
+                      placeholder="Próximo ao Metrô"
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400 ml-1">{t.observations}</label>
+                    <textarea 
+                      value={formData.observations}
+                      onChange={e => setFormData({...formData, observations: e.target.value})}
+                      className="w-full px-4 py-3.5 bg-slate-50 border-none rounded-2xl focus:ring-2 focus:ring-emerald-500 outline-none text-sm font-medium text-slate-900 transition-all min-h-[100px] resize-none"
+                      placeholder="..."
+                    />
                   </div>
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">

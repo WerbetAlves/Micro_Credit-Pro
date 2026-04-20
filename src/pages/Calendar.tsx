@@ -84,7 +84,7 @@ export function Calendar() {
                     {format(currentDate, 'MMMM yyyy', { locale: loc })}
                   </h2>
                   <p className="text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em] mt-1">
-                    Gestão de Recebimentos
+                    {t.receiptManagement}
                   </p>
                 </div>
                 <div className="flex items-center gap-2">
@@ -92,7 +92,7 @@ export function Calendar() {
                     <ChevronLeft className="size-5" />
                   </button>
                   <button onClick={() => setCurrentDate(new Date())} className="px-5 py-3 hover:bg-slate-50 rounded-2xl text-[10px] font-black uppercase tracking-widest text-slate-600 transition-all border border-slate-100 shadow-sm">
-                    Hoje
+                    {t.today}
                   </button>
                   <button onClick={handleNextMonth} className="p-3 hover:bg-slate-50 rounded-2xl text-slate-400 transition-all border border-slate-100 shadow-sm">
                     <ChevronRight className="size-5" />
@@ -151,7 +151,7 @@ export function Calendar() {
                         ))}
                         {dayInsts.length > 3 && (
                           <p className="text-[8px] font-black text-slate-400 text-center uppercase tracking-widest mt-1">
-                            + {dayInsts.length - 3} mais
+                            + {dayInsts.length - 3} {t.more}
                           </p>
                         )}
                       </div>
@@ -167,7 +167,7 @@ export function Calendar() {
                 <CalendarIcon className="absolute -bottom-10 -right-10 size-48 opacity-5 rotate-12" />
                 <h3 className="text-xl font-black uppercase tracking-tight mb-8 relative z-10 flex items-center gap-2">
                   <Clock className="size-5 text-emerald-400" />
-                  {selectedDay ? format(selectedDay, "dd 'de' MMMM", { locale: loc }) : 'Selecione um dia'}
+                  {selectedDay ? format(selectedDay, "dd 'de' MMMM", { locale: loc }) : t.selectDay}
                 </h3>
                 
                 <div className="space-y-6 relative z-10">
@@ -187,14 +187,14 @@ export function Calendar() {
                             </div>
                             <div>
                                 <p className="text-xs font-black uppercase tracking-tight text-white mb-0.5">{inst.loans?.clients?.full_name}</p>
-                                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Parcela Mensal</p>
+                                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{t.monthlyInstallmentLabel}</p>
                             </div>
                           </div>
                           <span className={cn(
                             "px-3 py-1 rounded-full text-[8px] font-black uppercase tracking-widest",
                             inst.status === 'paid' ? "bg-emerald-500/20 text-emerald-400" : "bg-amber-500/20 text-amber-400"
                           )}>
-                            {inst.status === 'paid' ? 'Paga' : 'Pendente'}
+                            {inst.status === 'paid' ? t.paid : t.pending}
                           </span>
                         </div>
                         
@@ -204,7 +204,7 @@ export function Calendar() {
                               <span className="text-sm font-black text-white">{formatCurrency(inst.amount)}</span>
                            </div>
                            <button className="text-[10px] font-black uppercase tracking-[0.2em] text-emerald-400 hover:text-emerald-300 transition-all">
-                             Notificar
+                             {t.notify}
                            </button>
                         </div>
                       </motion.div>
@@ -214,7 +214,7 @@ export function Calendar() {
                       <div className="size-16 bg-white/5 rounded-[2rem] flex items-center justify-center mx-auto">
                         <CalendarIcon className="size-8" />
                       </div>
-                      <p className="text-xs font-bold text-slate-400 uppercase tracking-[0.2em]">Nenhum recebimento hoje</p>
+                      <p className="text-xs font-bold text-slate-400 uppercase tracking-[0.2em]">{t.noReceiptsToday}</p>
                     </div>
                   )}
                 </div>
@@ -222,11 +222,11 @@ export function Calendar() {
 
               {/* Summary Stats */}
               <div className="bg-white rounded-[2.5rem] p-8 border border-slate-50 shadow-sm space-y-6">
-                 <h4 className="text-sm font-black uppercase tracking-[0.2em] text-slate-400">Resumo do Mês</h4>
+                 <h4 className="text-sm font-black uppercase tracking-[0.2em] text-slate-400">{t.monthSummary}</h4>
                  <div className="grid grid-cols-1 gap-4">
                     <div className="bg-slate-50 p-6 rounded-3xl flex justify-between items-center">
                        <div>
-                          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Total a Receber</p>
+                          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">{t.totalToReceive}</p>
                           <p className="text-xl font-black text-slate-900">{formatCurrency(installments.filter(i => isSameMonth(new Date(i.due_date), currentDate)).reduce((acc, curr) => acc + curr.amount, 0))}</p>
                        </div>
                        <TrendingUp className="size-8 text-emerald-500 opacity-20" />

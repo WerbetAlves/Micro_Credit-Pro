@@ -161,14 +161,13 @@ export function Financial() {
             </button>
             <h1 className="text-lg lg:text-xl font-bold tracking-tight text-slate-900 truncate">{t.financialOverview}</h1>
           </div>
-          
-          {/* Botão de Adicionar Transação no Topo */}
+              {/* Botão de Adicionar Transação no Topo */}
           <button 
             onClick={() => setIsTxModalOpen(true)}
             className="flex items-center gap-2 bg-emerald-600 text-white px-4 py-2 rounded-xl text-xs font-bold uppercase tracking-widest hover:bg-emerald-700 transition-colors shadow-lg shadow-emerald-200"
           >
             <Plus className="size-4" />
-            <span className="hidden sm:inline">Nova Transação</span>
+            <span className="hidden sm:inline">{t.newTransaction}</span>
           </button>
         </header>
 
@@ -257,9 +256,9 @@ export function Financial() {
                 </thead>
                 <tbody className="divide-y divide-slate-50">
                   {loading ? (
-                    <tr><td colSpan={4} className="px-6 py-10 text-center">Carregando...</td></tr>
+                    <tr><td colSpan={4} className="px-6 py-10 text-center">{t.processing}</td></tr>
                   ) : filteredTransactions.length === 0 ? (
-                    <tr><td colSpan={4} className="px-6 py-20 text-center text-slate-400 font-medium">No transactions found.</td></tr>
+                    <tr><td colSpan={4} className="px-6 py-20 text-center text-slate-400 font-medium">{t.noTransactions || 'No transactions found.'}</td></tr>
                   ) : (
                     filteredTransactions.map(tx => (
                       <tr key={tx.id} className="hover:bg-slate-50/50 transition-colors">
@@ -267,7 +266,7 @@ export function Financial() {
                         <td className="px-6 py-5">
                           <div className="flex items-center gap-3">
                             <div className={cn("w-8 h-8 rounded-lg flex items-center justify-center shrink-0", tx.type === 'income' ? "bg-emerald-50 text-emerald-600" : "bg-rose-50 text-rose-600")}>
-                              {tx.type === 'income' ? <ArrowUpRight className="size-4" /> : <ArrowDownRight className="size-4" />}
+                               {tx.type === 'income' ? <ArrowUpRight className="size-4" /> : <ArrowDownRight className="size-4" />}
                             </div>
                             <div>
                               <p className="text-xs font-bold text-slate-900 leading-tight">{tx.description || tx.category}</p>
@@ -297,46 +296,46 @@ export function Financial() {
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setIsTxModalOpen(false)} className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" />
             <motion.div initial={{ opacity: 0, scale: 0.95, y: 20 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95, y: 20 }} className="relative w-full max-w-md bg-white rounded-[2.5rem] p-8 shadow-2xl border border-slate-100">
               <div className="flex items-center justify-between mb-8">
-                <h3 className="text-xl font-black text-slate-900">Registrar Transação</h3>
+                <h3 className="text-xl font-black text-slate-900">{t.registerTransaction}</h3>
                 <button onClick={() => setIsTxModalOpen(false)} className="p-2 hover:bg-slate-50 rounded-xl"><X className="size-5 text-slate-400" /></button>
               </div>
 
               <form onSubmit={handleAddTransaction} className="space-y-6">
                 <div className="grid grid-cols-2 gap-4">
-                  <button type="button" onClick={() => setTxType('income')} className={cn("py-3 rounded-xl border-2 font-bold text-xs uppercase tracking-widest transition-all", txType === 'income' ? "border-emerald-500 bg-emerald-50 text-emerald-600" : "border-slate-100 text-slate-400 hover:bg-slate-50")}>Receita</button>
-                  <button type="button" onClick={() => setTxType('expense')} className={cn("py-3 rounded-xl border-2 font-bold text-xs uppercase tracking-widest transition-all", txType === 'expense' ? "border-rose-500 bg-rose-50 text-rose-600" : "border-slate-100 text-slate-400 hover:bg-slate-50")}>Despesa</button>
+                  <button type="button" onClick={() => setTxType('income')} className={cn("py-3 rounded-xl border-2 font-bold text-xs uppercase tracking-widest transition-all", txType === 'income' ? "border-emerald-500 bg-emerald-50 text-emerald-600" : "border-slate-100 text-slate-400 hover:bg-slate-50")}>{t.income}</button>
+                  <button type="button" onClick={() => setTxType('expense')} className={cn("py-3 rounded-xl border-2 font-bold text-xs uppercase tracking-widest transition-all", txType === 'expense' ? "border-rose-500 bg-rose-50 text-rose-600" : "border-slate-100 text-slate-400 hover:bg-slate-50")}>{t.expense}</button>
                 </div>
 
                 <div className="space-y-2">
-                  <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-4">Descrição</label>
+                  <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-4">{t.description}</label>
                   <input type="text" value={txDescription} onChange={e => setTxDescription(e.target.value)} placeholder="Ex: Compra de material" className="w-full bg-slate-50 border-none rounded-2xl px-6 py-4 text-sm font-bold focus:ring-2 focus:ring-emerald-100 outline-none" required />
                 </div>
 
                 <div className="space-y-2">
-                  <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-4">Categoria</label>
+                  <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-4">{t.category}</label>
                   <select value={txCategory} onChange={e => setTxCategory(e.target.value)} className="w-full bg-slate-50 border-none rounded-2xl px-6 py-4 text-sm font-bold text-slate-600 focus:ring-2 focus:ring-emerald-100 outline-none appearance-none">
-                    <option value="other">Outros</option>
-                    <option value="fee">Taxa / Tarifa</option>
-                    <option value="adjustment">Ajuste de Saldo</option>
+                    <option value="other">{t.other}</option>
+                    <option value="fee">{t.fee}</option>
+                    <option value="adjustment">{t.adjustment}</option>
                   </select>
                 </div>
 
                 <div className="space-y-2">
-                  <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-4">Valor</label>
+                  <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-4">{t.amount}</label>
                   <input type="number" step="0.01" value={txAmount} onChange={e => setTxAmount(e.target.value)} placeholder="0.00" className="w-full bg-slate-50 border-none rounded-2xl px-6 py-4 text-sm font-bold focus:ring-2 focus:ring-emerald-100 outline-none" required />
                 </div>
 
                 <div className="space-y-2">
-                  <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-4">Vincular a uma Carteira</label>
+                  <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-4">{t.linkWallet}</label>
                   <select value={txWalletId} onChange={e => setTxWalletId(e.target.value)} className="w-full bg-slate-50 border-none rounded-2xl px-6 py-4 text-sm font-bold text-slate-600 focus:ring-2 focus:ring-emerald-100 outline-none appearance-none">
-                    <option value="">Nenhuma (Geral)</option>
+                    <option value="">{t.other}</option>
                     {availableWallets.map(w => (
                       <option key={w.id} value={w.id}>{w.name}</option>
                     ))}
                   </select>
                 </div>
 
-                <button type="submit" className="w-full bg-slate-900 text-white rounded-2xl py-4 font-black text-xs uppercase tracking-widest hover:bg-slate-800 transition-all active:scale-95 shadow-xl shadow-slate-200 mt-4">Salvar</button>
+                <button type="submit" className="w-full bg-slate-900 text-white rounded-2xl py-4 font-black text-xs uppercase tracking-widest hover:bg-slate-800 transition-all active:scale-95 shadow-xl shadow-slate-200 mt-4">{t.save}</button>
               </form>
             </motion.div>
           </div>

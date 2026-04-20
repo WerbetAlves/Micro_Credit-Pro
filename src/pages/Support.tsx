@@ -193,11 +193,11 @@ export function Support() {
                     <span className="text-xs font-black uppercase tracking-[0.3em] text-emerald-400">Emerald AI Intelligence</span>
                   </div>
                   <h2 className="text-3xl lg:text-4xl font-black tracking-tight leading-tight">
-                    Precisa de ajuda com o SaaS? <br/>
-                    <span className="text-emerald-400">Fale com nossa IA primeiro.</span>
+                    {t.talkToAiFirst.split('.')[0]}? <br/>
+                    <span className="text-emerald-400">{t.talkToAiFirst.split('.')[1] || ''}</span>
                   </h2>
                   <p className="text-slate-400 font-medium text-lg leading-relaxed max-w-lg">
-                    {t.aiSupportInstruction} Nossa IA resolve 90% das dúvidas instantaneamente.
+                    {t.aiSupportInstruction}
                   </p>
                   <div className="flex items-center gap-4 pt-4">
                     <button 
@@ -209,7 +209,7 @@ export function Support() {
                       className="bg-emerald-500 text-white px-8 py-4 rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl shadow-emerald-500/20 hover:scale-105 transition-all active:scale-95 flex items-center gap-3"
                     >
                       <MessageSquareText className="size-4" />
-                      Iniciar Conversa
+                      {t.startConversation}
                     </button>
                   </div>
                 </div>
@@ -243,7 +243,7 @@ export function Support() {
               <Search className="absolute left-4 top-1/2 -translate-y-1/2 size-5 text-slate-300" />
               <input 
                 type="text" 
-                placeholder="Buscar tickets..." 
+                placeholder={t.searchTickets} 
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 className="w-full pl-12 pr-4 py-4 bg-white border border-slate-100 rounded-[1.5rem] shadow-sm focus:ring-2 focus:ring-emerald-100 outline-none transition-all text-sm font-medium text-slate-600"
@@ -256,11 +256,11 @@ export function Support() {
                     onChange={(e) => setFilterStatus(e.target.value)}
                     className="bg-transparent border-none outline-none text-xs font-bold text-slate-500 uppercase tracking-widest cursor-pointer focus:ring-0"
                 >
-                    <option value="all">Todos os Status</option>
-                    <option value="open">Abertos</option>
-                    <option value="in_progress">Em Progresso</option>
-                    <option value="resolved">Resolvidos</option>
-                    <option value="closed">Fechados</option>
+                    <option value="all">{t.allStatus}</option>
+                    <option value="open">{t.open}</option>
+                    <option value="in_progress">{t.inProgress}</option>
+                    <option value="resolved">{t.resolved}</option>
+                    <option value="closed">{t.closed}</option>
                 </select>
             </div>
           </div>
@@ -269,7 +269,7 @@ export function Support() {
           {loading ? (
              <div className="flex flex-col items-center justify-center py-20 gap-4">
                 <div className="w-12 h-12 border-4 border-emerald-100 border-t-emerald-500 rounded-full animate-spin" />
-                <p className="text-sm font-bold text-slate-400 uppercase tracking-widest">Carregando Tickets...</p>
+                <p className="text-sm font-bold text-slate-400 uppercase tracking-widest">{t.loadingTickets}</p>
              </div>
           ) : filteredTickets.length === 0 ? (
             <div className="bg-white rounded-[2.5rem] p-12 text-center border border-slate-50 shadow-sm col-span-full">
@@ -277,12 +277,12 @@ export function Support() {
                 <MessageSquare className="size-8" />
               </div>
               <h3 className="text-lg font-bold text-slate-900 mb-2">{t.noTickets}</h3>
-              <p className="text-sm text-slate-400 max-w-xs mx-auto mb-6">Você ainda não possui tickets de suporte ativos.</p>
+              <p className="text-sm text-slate-400 max-w-xs mx-auto mb-6">{t.noTicketsDescription}</p>
               <button 
                 onClick={() => setIsModalOpen(true)}
                 className="bg-emerald-50 text-emerald-600 px-6 py-3 rounded-xl font-black text-xs uppercase tracking-widest hover:bg-emerald-100 transition-all active:scale-95"
               >
-                Abrir Primeiro Ticket
+                {t.openFirstTicket}
               </button>
             </div>
           ) : (
@@ -334,7 +334,7 @@ export function Support() {
                       <div className="flex items-center gap-2">
                         {getStatusIcon(ticket.status)}
                         <span className="text-xs font-black text-slate-900 uppercase tracking-widest">
-                          {ticket.status.replace('_', ' ')}
+                          {t[ticket.status as keyof typeof t] || ticket.status.replace('_', ' ')}
                         </span>
                       </div>
                       
@@ -345,7 +345,7 @@ export function Support() {
                              <button 
                                onClick={() => handleUpdateStatus(ticket.id, 'in_progress')}
                                className="p-2.5 bg-blue-50 text-blue-600 rounded-xl hover:bg-blue-100 transition-all active:scale-90"
-                               title="Marcar em progresso"
+                               title={t.markInProgress}
                              >
                                <ArrowRight className="size-4" />
                              </button>
@@ -354,7 +354,7 @@ export function Support() {
                              <button 
                                onClick={() => handleUpdateStatus(ticket.id, 'resolved')}
                                className="p-2.5 bg-emerald-50 text-emerald-600 rounded-xl hover:bg-emerald-100 transition-all active:scale-90"
-                               title="Resolver ticket"
+                               title={t.resolveTicket}
                              >
                                <CheckCircle2 className="size-4" />
                              </button>
@@ -392,7 +392,7 @@ export function Support() {
                   </div>
                   <div>
                     <h3 className="text-xl font-black text-slate-900 uppercase tracking-tight">{t.openTicket}</h3>
-                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Novo Ticket de Suporte</p>
+                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{t.newSupportTicket}</p>
                   </div>
                 </div>
 
@@ -409,7 +409,7 @@ export function Support() {
                     <input 
                       type="text"
                       required
-                      placeholder="Ex: Problema no acesso às carteiras"
+                      placeholder={t.subjectPlaceholder}
                       value={formData.subject}
                       onChange={e => setFormData({...formData, subject: e.target.value})}
                       className="w-full px-4 py-4 bg-slate-50 border-none rounded-2xl focus:ring-2 focus:ring-emerald-500 outline-none text-sm font-bold text-slate-900 transition-all"
@@ -430,7 +430,7 @@ export function Support() {
                       </select>
                     </div>
                     <div className="space-y-2">
-                      <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400 ml-1">Categoria</label>
+                      <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400 ml-1">{t.category}</label>
                       <select 
                         value={formData.category}
                         onChange={e => setFormData({...formData, category: e.target.value as any})}
@@ -449,7 +449,7 @@ export function Support() {
                     <textarea 
                       required
                       rows={4}
-                      placeholder="Descreva detalhadamente seu problema ou dúvida..."
+                      placeholder={t.descriptionPlaceholder}
                       value={formData.description}
                       onChange={e => setFormData({...formData, description: e.target.value})}
                       className="w-full px-4 py-4 bg-slate-50 border-none rounded-2xl focus:ring-2 focus:ring-emerald-500 outline-none text-sm font-bold text-slate-900 transition-all resize-none"
@@ -469,7 +469,7 @@ export function Support() {
                       disabled={formLoading}
                       className="flex-3 px-10 py-4 bg-emerald-500 text-white font-black rounded-2xl hover:bg-emerald-600 shadow-lg shadow-emerald-200 transition-all active:scale-[0.98] disabled:opacity-50 uppercase tracking-[0.15em] text-xs"
                     >
-                      {formLoading ? t.processing : "Criar Ticket"}
+                      {formLoading ? t.processing : t.createTicket}
                     </button>
                   </div>
                 </form>
