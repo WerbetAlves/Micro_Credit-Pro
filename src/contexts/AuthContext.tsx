@@ -29,7 +29,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
 
-  // 1. Memoizamos a função para evitar que ela dispare re-renders desnecessários
+  // 1. fetchProfile memoizado corretamente
   const fetchProfile = useCallback(async (userId: string) => {
     try {
       const { data, error } = await supabase
@@ -39,11 +39,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         .maybeSingle();
       
       if (error) throw error;
-      setProfile(data as Profile);
-      return data;
+      return data as Profile;
     } catch (error) {
       console.error('Erro ao buscar perfil:', error);
-      setProfile(null);
       return null;
     }
   }, []);
@@ -52,20 +50,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     let mounted = true;
 
     async function initializeAuth() {
-      setLoading(true);
       try {
-        const { data: { session: initialSession }, error: sessionError } = await supabase.auth.getSession();
+        const { data: { session: initialSession } } = await supabase.auth.getSession();
         
-        if (sessionError) {
-          // Se o token estiver corrompido, limpa tudo silenciosamente
-          localStorage.removeItem('supabase.auth.token');
-          setUser(null);
-          setSession(null);
-        } else if (initialSession && mounted) {
-          setSession(initialSession);
-          setUser(initialSession.user);
-          // 🔥 Sincronia: Aguarda o perfil antes de liberar o loading
-          await fetchProfile(initialSession.user.id);
+        if (initialSession && mounted) {
+          const userProfile = await fetchProfile(initialSession.user.id);
+          if (mounted) {
+            setSession(initialSession);
+            setUser(initialSession.user);
+            setProfile(userProfile);
+          }
         }
       } catch (error) {
         console.error("Erro na inicialização:", error);
@@ -76,17 +70,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     initializeAuth();
 
-    // 2. Ouvinte de estado mais inteligente
+    // 2. O ouvinte de estado NÃO deve depender de 'profile'
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, currentSession) => {
       if (!mounted) return;
 
       if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
         if (currentSession) {
-          setSession(currentSession);
-          setUser(currentSession.user);
-          // Só busca o perfil se ele ainda não existir ou se o usuário mudou
-          if (!profile || profile.id !== currentSession.user.id) {
-            await fetchProfile(currentSession.user.id);
+          const userProfile = await fetchProfile(currentSession.user.id);
+          if (mounted) {
+            setSession(currentSession);
+            setUser(currentSession.user);
+            setProfile(userProfile);
           }
         }
       } else if (event === 'SIGNED_OUT') {
@@ -95,36 +89,36 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setProfile(null);
       }
       
-      setLoading(false);
+      // Garante que o loading para após qualquer evento
+      if (mounted) setLoading(false);
     });
 
     return () => {
       mounted = false;
       subscription.unsubscribe();
     };
-  }, [fetchProfile, profile]); // Dependências corretas para evitar loops
+    // 🔥 IMPORTANTE: Removi 'profile' daqui para evitar o loop de refresh infinito!
+  }, [fetchProfile]); 
 
   const signOut = async () => {
     setLoading(true);
     try {
-      // Limpa os dados ANTES para evitar que o router tente carregar dados protegidos
       setProfile(null);
       setUser(null);
       setSession(null);
-      
       await supabase.auth.signOut();
       localStorage.clear();
-      
-      // Redirecionamento limpo
       window.location.replace('/login');
     } catch (error) {
-      console.error("Erro ao sair:", error);
       window.location.href = '/login';
     }
   };
 
   const refreshProfile = async () => {
-    if (user) await fetchProfile(user.id);
+    if (user) {
+      const updatedProfile = await fetchProfile(user.id);
+      setProfile(updatedProfile);
+    }
   };
 
   return (
