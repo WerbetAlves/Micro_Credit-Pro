@@ -9,6 +9,7 @@ export interface Profile {
   avatar_url: string | null;
   is_admin: boolean;
   plan_type: 'free' | 'pro' | 'enterprise';
+  has_onboarded: boolean; // 🔥 Adicionado para controlar a animação de boas-vindas
 }
 
 interface AuthContextType {
@@ -34,12 +35,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         .from('profiles')
         .select('*')
         .eq('id', userId)
-        .maybeSingle(); // Usamos maybeSingle para não estourar erro se não achar
+        .maybeSingle();
         
       if (error) throw error;
       setProfile(data as Profile);
     } catch (error) {
-      console.error('Erro ao buscar perfil:', error);
+      console.error('Erro ao buscar perfil no AuthContext:', error);
       setProfile(null);
     }
   }
@@ -60,7 +61,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       } catch (error) {
         console.error("Auth init error:", error);
       } finally {
-        if (mounted) setLoading(false); // 🔥 GARANTE que o loading acaba
+        if (mounted) setLoading(false);
       }
     }
 
@@ -69,7 +70,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (!mounted) return;
 
-      // Se o evento for de saída, limpamos tudo e paramos o loading
       if (event === 'SIGNED_OUT') {
         setUser(null);
         setSession(null);
@@ -85,7 +85,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         await fetchProfile(session.user.id);
       }
       
-      setLoading(false); // 🔥 Libera o ecrã após tentar carregar o user
+      setLoading(false);
     });
 
     return () => {
@@ -103,7 +103,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setUser(null);
       setSession(null);
       setLoading(false);
-      window.location.href = '/login'; // Força redirecionamento limpo
+      window.location.href = '/login';
     }
   };
 

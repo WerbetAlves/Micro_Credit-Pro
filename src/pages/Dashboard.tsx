@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Plus, Zap, User, Wallet, AlertCircle } from 'lucide-react';
+import { Plus, Zap, User, Wallet } from 'lucide-react';
 import { Sidebar } from '../components/Sidebar';
 import { Header } from '../components/Header';
 import { AIAssistantDashboard } from '../components/AIAssistantDashboard';
@@ -18,8 +18,8 @@ import { cn } from '../lib/utils';
 
 export function Dashboard() {
   const { t, formatCurrency } = useLanguage();
-  // 🔥 Lemos o user E o profile diretamente do contexto (Instântaneo!)
-  const { user, profile } = useAuth();
+  // 🔥 Pegamos user, profile e refreshProfile do contexto global
+  const { user, profile, refreshProfile } = useAuth();
   const navigate = useNavigate();
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   
@@ -35,17 +35,33 @@ export function Dashboard() {
   });
   const [showWelcome, setShowWelcome] = useState(false);
 
+  // 🔥 Lógica 1: Decidir se mostra a animação baseada no banco de dados
   useEffect(() => {
-    const hasSeenWelcome = localStorage.getItem(`welcome_seen_${user?.id}`);
-    if (!hasSeenWelcome && user) {
+    // Se o perfil carregou e o campo has_onboarded for falso, mostramos as boas-vindas
+    if (profile && profile.has_onboarded === false) {
       setShowWelcome(true);
     }
-  }, [user]);
+  }, [profile]);
 
-  const handleWelcomeComplete = () => {
+  // 🔥 Lógica 2: Finalizar o onboarding salvando no Supabase
+  const handleWelcomeComplete = async () => {
     setShowWelcome(false);
+    
     if (user) {
-      localStorage.setItem(`welcome_seen_${user.id}`, 'true');
+      try {
+        // Atualizamos a coluna na base de dados
+        const { error } = await supabase
+          .from('profiles')
+          .update({ has_onboarded: true })
+          .eq('id', user.id);
+
+        if (error) throw error;
+
+        // Forçamos a atualização do perfil global para o sistema saber que já terminou
+        await refreshProfile();
+      } catch (err) {
+        console.error("Erro ao atualizar status de onboarding:", err);
+      }
     }
   };
 
@@ -63,7 +79,7 @@ export function Dashboard() {
       const firstDay = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0];
       const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().split('T')[0];
 
-      // 🔥 Removemos o pedido do Profile daqui. São menos dados a trafegar pela rede!
+      // Consultas paralelas para performance
       const [loansRes, walletsRes, clientsRes, installmentsRes] = await Promise.all([
         supabase.from('loans').select('*').eq('user_id', user.id),
         supabase.from('wallets').select('balance').eq('user_id', user.id),
@@ -83,7 +99,7 @@ export function Dashboard() {
       const { data: paidInstallments, error: instError } = installmentsRes;
       if (instError) throw instError;
 
-      // Cálculos
+      // Cálculos estatísticos
       const totalLoansCapital = (loans || []).reduce((acc, l) => acc + Number(l.principal_amount), 0);
       const activeCount = (loans || []).filter(l => l.status === 'active' || l.status === 'pending').length;
       const defaultCount = (loans || []).filter(l => l.status === 'default').length;
@@ -124,7 +140,9 @@ export function Dashboard() {
 
   return (
     <div className="flex min-h-screen bg-[#f8fafc] overflow-x-hidden">
+      {/* Animação de Boas-vindas controlada pelo banco de dados */}
       {showWelcome && <WelcomeAnimation onComplete={handleWelcomeComplete} />}
+      
       <Sidebar isOpen={isSidebarOpen} onClose={() => setIsSidebarOpen(false)} />
 
       <main className="flex-1 lg:ml-72 min-h-screen pb-20 w-full transition-all duration-300">
@@ -136,7 +154,7 @@ export function Dashboard() {
                 profile.plan_type === 'free' ? "bg-slate-400" : "bg-emerald-500"
               )} />
               <span className="text-[10px] font-black uppercase tracking-widest text-slate-600">
-                {t.planLabel} {profile.plan_type}
+                {t.planLabel || 'Plano'}: {profile.plan_type}
               </span>
             </div>
           )}
@@ -144,7 +162,7 @@ export function Dashboard() {
 
         <div className="px-4 md:px-6 lg:px-8 py-6 lg:py-10 w-full max-w-[1600px] mx-auto space-y-8 lg:space-y-12 transition-all">
           
-          {/* Quick Actions Bar */}
+          {/* Ações Rápidas */}
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
             <button 
               onClick={scrollToSimulator}
@@ -162,7 +180,7 @@ export function Dashboard() {
               <div className="w-12 h-12 rounded-2xl bg-primary-500 text-white flex items-center justify-center group-hover:scale-110 transition-transform shadow-lg shadow-primary-200">
                 <User className="size-6" />
               </div>
-              <span className="text-[10px] font-black text-slate-700 uppercase tracking-widest">{t.addClient}</span>
+              <span className="text-[10px] font-black text-slate-700 uppercase tracking-widest">{t.addClient || 'Clientes'}</span>
             </button>
             <button 
               onClick={() => navigate('/payments')}
@@ -171,7 +189,7 @@ export function Dashboard() {
               <div className="w-12 h-12 rounded-2xl bg-amber-500 text-white flex items-center justify-center group-hover:scale-110 transition-transform shadow-lg shadow-amber-200">
                 <Zap className="size-6" />
               </div>
-              <span className="text-[10px] font-black text-slate-700 uppercase tracking-widest">{t.manageInstallments}</span>
+              <span className="text-[10px] font-black text-slate-700 uppercase tracking-widest">{t.manageInstallments || 'Cobranças'}</span>
             </button>
             <button 
               onClick={() => navigate('/financial')}
@@ -180,7 +198,7 @@ export function Dashboard() {
               <div className="w-12 h-12 rounded-2xl bg-blue-500 text-white flex items-center justify-center group-hover:scale-110 transition-transform shadow-lg shadow-blue-200">
                 <Wallet className="size-6" />
               </div>
-              <span className="text-[10px] font-black text-slate-700 uppercase tracking-widest">{t.wallets}</span>
+              <span className="text-[10px] font-black text-slate-700 uppercase tracking-widest">{t.wallets || 'Financeiro'}</span>
             </button>
           </div>
 
@@ -190,7 +208,7 @@ export function Dashboard() {
             hasLoans={stats.hasLoans}
           />
 
-          {/* KPI Grid */}
+          {/* Cards KPI */}
           <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 lg:gap-6">
             <KPICard 
               label={t.totalCapital} 
@@ -214,11 +232,12 @@ export function Dashboard() {
             <KPICard 
               label={t.defaultRate} 
               value={`${stats.defaultRate.toFixed(1)}%`} 
-              change={t.improvement?.replace('{val}', '0,0%') || '0.0%'} 
+              change={t.improvement?.replace('{val}', '0.0%') || '0.0%'} 
               trend="up" 
             />
           </section>
 
+          {/* Conteúdo Principal */}
           <div className="space-y-8 lg:space-y-12 w-full">
             
             <div id="issue-new-credit" className="space-y-6 scroll-mt-24 w-full">
@@ -263,6 +282,7 @@ export function Dashboard() {
         </div>
       </main>
 
+      {/* Botão flutuante para mobile */}
       <button 
         onClick={scrollToSimulator}
         className="fixed bottom-6 right-6 lg:hidden w-14 h-14 bg-emerald-600 text-white rounded-full flex items-center justify-center shadow-2xl shadow-emerald-200 z-50 hover:scale-110 active:scale-95 transition-all"
