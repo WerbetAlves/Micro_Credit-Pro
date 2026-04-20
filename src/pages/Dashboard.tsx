@@ -21,7 +21,6 @@ export function Dashboard() {
   const { user, profile, refreshProfile } = useAuth();
   const navigate = useNavigate();
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-  // 🔥 Adicionado estado para a pesquisa global do Dashboard
   const [searchTerm, setSearchTerm] = useState('');
   
   const [stats, setStats] = useState({
@@ -64,57 +63,56 @@ export function Dashboard() {
     }
   }, [user]);
 
+  // 🔥 Lógica de Conexão e Cálculos Otimizada
   async function fetchDashboardStats() {
     if (!user) return;
     try {
       const now = new Date();
-      const firstDay = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0];
-      const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().split('T')[0];
+      const firstDayOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
 
-      const [loansRes, walletsRes, clientsRes, installmentsRes] = await Promise.all([
-        supabase.from('loans').select('*').eq('user_id', user.id),
+      // Puxamos todas as tabelas necessárias em paralelo para máxima performance
+      const [loansRes, walletsRes, clientsRes, txRes] = await Promise.all([
+        supabase.from('loans').select('id, principal_amount, status').eq('user_id', user.id),
         supabase.from('wallets').select('balance').eq('user_id', user.id),
         supabase.from('clients').select('id', { count: 'exact', head: true }).eq('user_id', user.id),
-        supabase.from('installments').select('amount, loan_id').eq('status', 'paid').gte('due_date', firstDay).lte('due_date', lastDay)
+        supabase.from('transactions')
+          .select('amount, type, category')
+          .eq('user_id', user.id)
+          .gte('created_at', firstDayOfMonth)
       ]);
 
-      const { data: loans, error: loansError } = loansRes;
-      if (loansError) throw loansError;
+      // 1. Capital Total = Soma exata do saldo em todas as carteiras (Liquidez real)
+      const totalWalletBalance = (walletsRes.data || []).reduce((acc, w) => acc + Number(w.balance), 0);
 
-      const { data: wallets, error: walletsError } = walletsRes;
-      if (walletsError) throw walletsError;
-
-      const { count: clientsCount, error: clientsError } = clientsRes;
-      if (clientsError) throw clientsError;
-
-      const { data: paidInstallments, error: instError } = installmentsRes;
-      if (instError) throw instError;
-
-      const totalLoansCapital = (loans || []).reduce((acc, l) => acc + Number(l.principal_amount), 0);
-      const activeCount = (loans || []).filter(l => l.status === 'active' || l.status === 'pending').length;
-      const defaultCount = (loans || []).filter(l => l.status === 'default').length;
-      const defRate = loans?.length ? (defaultCount / loans.length) * 100 : 0;
-      const avgAmt = loans?.length ? totalLoansCapital / loans.length : 0;
+      // 2. Lucro Mensal = Fluxo de Caixa (Entradas - Saídas do mês)
+      // Nota: Categorizamos 'loan_disbursement' como investimento, não despesa de lucro.
+      const monthlyIncome = (txRes.data || [])
+        .filter(t => t.type === 'income')
+        .reduce((acc, t) => acc + Number(t.amount), 0);
       
-      const totalWalletBalance = (wallets || []).reduce((acc, w) => acc + Number(w.balance), 0);
+      const monthlyExpenses = (txRes.data || [])
+        .filter(t => t.type === 'expense' && t.category !== 'loan_disbursement')
+        .reduce((acc, t) => acc + Number(t.amount), 0);
 
-      let monthlyP = 0;
-      if (paidInstallments && loans) {
-        const myLoanIds = loans.map(l => l.id);
-        monthlyP = paidInstallments
-          .filter(i => myLoanIds.includes(i.loan_id))
-          .reduce((acc, i) => acc + Number(i.amount), 0);
-      }
+      const netProfit = monthlyIncome - monthlyExpenses;
+
+      // 3. Estatísticas de Empréstimos
+      const totalLoans = loansRes.data || [];
+      const activeCount = totalLoans.filter(l => l.status === 'active' || l.status === 'pending').length;
+      const defaultCount = totalLoans.filter(l => l.status === 'default').length;
+      const defRate = totalLoans.length ? (defaultCount / totalLoans.length) * 100 : 0;
+      const totalPrincipalOut = totalLoans.reduce((acc, l) => acc + Number(l.principal_amount), 0);
+      const avgAmt = totalLoans.length ? totalPrincipalOut / totalLoans.length : 0;
 
       setStats({
-        totalCapital: totalLoansCapital + totalWalletBalance,
-        monthlyProfit: monthlyP,
+        totalCapital: totalWalletBalance, 
+        monthlyProfit: netProfit,
         activeLoans: activeCount,
         defaultRate: defRate,
         avgLoanAmount: avgAmt,
-        hasWallets: (wallets?.length || 0) > 0,
-        hasClients: (clientsCount || 0) > 0,
-        hasLoans: (loans?.length || 0) > 0
+        hasWallets: (walletsRes.data?.length || 0) > 0,
+        hasClients: (clientsRes.count || 0) > 0,
+        hasLoans: totalLoans.length > 0
       });
     } catch (error) {
       console.error('Error fetching dashboard stats:', (error as Error).message);
@@ -135,7 +133,6 @@ export function Dashboard() {
       <Sidebar isOpen={isSidebarOpen} onClose={() => setIsSidebarOpen(false)} />
 
       <main className="flex-1 lg:ml-72 min-h-screen pb-20 w-full transition-all duration-300">
-        {/* 🔥 Header atualizado com suporte à pesquisa */}
         <Header 
           title={t.dashboard} 
           onMenuClick={() => setIsSidebarOpen(true)}
@@ -206,13 +203,11 @@ export function Dashboard() {
 
             <div className="grid grid-cols-1 xl:grid-cols-12 gap-6 md:gap-8 lg:gap-12">
               <div className="xl:col-span-8 w-full min-w-0">
-                {/* 🔥 Passamos o searchTerm para o componente de cobranças */}
                 <UpcomingCollections searchTerm={searchTerm} />
               </div>
 
               <div className="xl:col-span-4 space-y-8 w-full min-w-0">
                 <AIAssistantDashboard />
-                {/* 🔥 Passamos o searchTerm para o componente de atividades */}
                 <RecentActivity searchTerm={searchTerm} />
                 
                 <div className="bg-emerald-600 rounded-[2rem] p-6 lg:p-8 text-white relative overflow-hidden shadow-xl shadow-emerald-100">
