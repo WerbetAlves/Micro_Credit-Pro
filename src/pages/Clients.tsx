@@ -8,6 +8,18 @@ import { supabase } from '../lib/supabase';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../lib/utils';
 
+// --- CONFIGURAÇÃO DE LIMITES DO SAAS ---
+const PLAN_LIMITS = {
+  free: { maxClients: 5, label: 'Gratuito' },
+  pro: { maxClients: 100, label: 'Profissional' },
+  enterprise: { maxClients: 999999, label: 'Enterprise' },
+};
+
+interface Profile {
+  plan_type: 'free' | 'pro' | 'enterprise';
+  is_admin: boolean;
+}
+
 interface Client {
   id: string;
   full_name: string;
@@ -27,7 +39,7 @@ export function Clients() {
   const [clients, setClients] = useState<Client[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
-  const [profile, setProfile] = useState<any>(null);
+  const [profile, setProfile] = useState<Profile | null>(null);
   
   // Modal states
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -36,33 +48,36 @@ export function Clients() {
   const [formError, setFormError] = useState<string | null>(null);
 
   // Form states
-  const [formData, setFormData] = useState<{
-    full_name: string;
-    email: string;
-    phone: string;
-    document_id: string;
-    address: string;
-    credit_score: number;
-    status: 'active' | 'inactive' | 'blocked';
-  }>({
+  const [formData, setFormData] = useState({
     full_name: '',
     email: '',
     phone: '',
     document_id: '',
     address: '',
     credit_score: 500,
-    status: 'active'
+    status: 'active' as const
   });
 
   useEffect(() => {
-    fetchClients();
-    fetchProfile();
+    if (user) {
+      fetchClients();
+      fetchProfile();
+    }
   }, [user]);
 
   async function fetchProfile() {
-    if (!user) return;
-    const { data } = await supabase.from('profiles').select('*').single();
-    if (data) setProfile(data);
+    try {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('plan_type, is_admin')
+        .eq('id', user?.id)
+        .single();
+      
+      if (error) throw error;
+      if (data) setProfile(data as Profile);
+    } catch (err) {
+      console.error('Erro ao buscar perfil:', err);
+    }
   }
 
   async function fetchClients() {
@@ -97,9 +112,14 @@ export function Clients() {
         status: client.status
       });
     } else {
-      // Bloqueio de Plano Grátis
-      if ((profile?.plan_type || 'free') === 'free' && clients.length >= 3) {
-        alert("Limite de 3 clientes atingido no Plano Gratuito. Faça upgrade para adicionar clientes ilimitados!");
+      // --- LÓGICA DE BLOQUEIO DO SAAS ---
+      const userPlan = profile?.plan_type || 'free';
+      const limit = PLAN_LIMITS[userPlan].maxClients;
+
+      if (clients.length >= limit) {
+        alert(
+          `Limite atingido! Seu plano ${PLAN_LIMITS[userPlan].label} permite apenas ${limit} clientes.\n\nFaça upgrade para continuar expandindo seu negócio!`
+        );
         return;
       }
 
@@ -208,6 +228,13 @@ export function Clients() {
                 onChange={(e) => setSearch(e.target.value)}
                 className="w-full pl-12 pr-4 py-4 bg-white border border-slate-100 rounded-[1.5rem] shadow-sm focus:ring-2 focus:ring-emerald-100 outline-none transition-all text-sm font-medium text-slate-600"
               />
+            </div>
+            {/* Indicador de Plano (Opcional - Bom para UX) */}
+            <div className="px-6 py-4 bg-white rounded-[1.5rem] border border-slate-100 flex items-center gap-3">
+               <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+               <span className="text-xs font-bold text-slate-500 uppercase tracking-widest">
+                  Plano: {profile?.plan_type || 'Carregando...'}
+               </span>
             </div>
           </div>
 
