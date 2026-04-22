@@ -6,11 +6,12 @@ import { supabase } from '../lib/supabase';
 import { motion } from 'motion/react';
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, 
-  PieChart, Pie, Cell
+  PieChart, Pie, Cell, LineChart, Line, Legend, AreaChart, Area 
 } from 'recharts';
 import { 
-  TrendingUp, BrainCircuit, Activity, 
+  TrendingUp, TrendingDown, BrainCircuit, Activity, 
   Target, ShieldAlert, Zap, Layers, Landmark, Sparkles,
+  ArrowRight
 } from 'lucide-react';
 import { GoogleGenAI } from "@google/genai";
 import { cn } from '../lib/utils';
@@ -30,32 +31,36 @@ export function Analytics() {
     delinquencyRate: 0,
     expectedRevenue: 0,
     growthRate: 0,
-    statusDistribution: [] as { name: string; value: number }[],
-    monthlyVolume: [] as { month: string; amount: number }[],
+    statusDistribution: [] as any[],
+    monthlyVolume: [] as any[],
   });
 
   useEffect(() => {
-    if (user && user.id) {
-      fetchAnalyticsData(user.id);
+    if (user) {
+      fetchAnalyticsData();
     }
   }, [user]);
 
-  async function fetchAnalyticsData(userId: string) {
+  async function fetchAnalyticsData() {
     setLoading(true);
     try {
-      const [loansRes, installmentsRes] = await Promise.all([
-        supabase.from('loans').select('*').eq('user_id', userId),
-        supabase.from('installments').select('*, loans!inner(user_id)').eq('loans.user_id', userId)
-      ]);
-
-      const { data: loans, error: loansError } = loansRes;
-      const { data: installments, error: instError } = installmentsRes;
-
+      // 1. Fetch Loans & Status Distribution
+      const { data: loans, error: loansError } = await supabase
+        .from('loans')
+        .select('*')
+        .eq('user_id', user.id);
+      
       if (loansError) throw loansError;
+
+      // 2. Fetch Installments for Delinquency
+      const { data: installments, error: instError } = await supabase
+        .from('installments')
+        .select('*, loans!inner(user_id)')
+        .eq('loans.user_id', user.id);
+
       if (instError) throw instError;
 
-      if (!loans || !installments) throw new Error("Failed to fetch essential data.");
-      
+      // Calculations
       const totalPortfolio = loans.reduce((acc, l) => acc + Number(l.principal_amount), 0);
       
       const lateAmount = installments
@@ -73,7 +78,8 @@ export function Analytics() {
         .filter(i => i.status === 'upcoming' || i.status === 'late')
         .reduce((acc, i) => acc + Number(i.amount), 0);
 
-      const statusCounts = loans.reduce((acc: Record<string, number>, l) => {
+      // Status Distribution
+      const statusCounts = loans.reduce((acc: any, l) => {
         acc[l.status] = (acc[l.status] || 0) + 1;
         return acc;
       }, {});
@@ -83,7 +89,8 @@ export function Analytics() {
         value
       }));
 
-      const monthlyData = loans.reduce((acc: Record<string, { month: string; amount: number }>, l) => {
+      // Monthly Volume (Mocking grouping for now, ideally aggregation query)
+      const monthlyData = loans.reduce((acc: any, l) => {
         const month = new Date(l.created_at).toLocaleDateString([], { month: 'short' });
         if (!acc[month]) acc[month] = { month, amount: 0 };
         acc[month].amount += Number(l.principal_amount);
@@ -94,13 +101,13 @@ export function Analytics() {
         totalPortfolio,
         delinquencyRate,
         expectedRevenue,
-        growthRate: 12.5,
+        growthRate: 12.5, // Mock value
         statusDistribution,
         monthlyVolume: Object.values(monthlyData),
       });
 
-    } catch (error) {
-      console.error('Analytics Fetch Error:', (error as Error).message);
+    } catch (err: any) {
+      console.error('Analytics Fetch Error:', err.message);
     } finally {
       setLoading(false);
     }
@@ -109,7 +116,7 @@ export function Analytics() {
   async function generateAIInsights() {
     setAiLoading(true);
     try {
-      const ai = new GoogleGenAI({ apiKey: import.meta.env.VITE_GEMINI_API_KEY });
+      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
       
       const prompt = `
         Aja como um consultor estratégico de elite para uma empresa de microcrédito (Emerald Micro-Credit).
@@ -125,6 +132,8 @@ export function Analytics() {
         1. [Título curto] - [Explicação]
         2. [Título curto] - [Explicação]
         3. [Título curto] - [Explicação]
+        
+        Mantenha o tom profissional e focado em lucro e mitigação de risco.
       `;
 
       const response = await ai.models.generateContent({
@@ -132,10 +141,10 @@ export function Analytics() {
         contents: prompt,
       });
 
-      setAiInsight(response.text || "Insights gerados vazios.");
-    } catch (error) {
-      console.error('Gemini Error:', (error as Error).message);
-      setAiInsight("Verifique sua chave de API do Gemini no painel do Vercel.");
+      setAiInsight(response.text);
+    } catch (err: any) {
+      console.error('Gemini Error:', err.message);
+      setAiInsight("Desculpe, não conseguimos conectar com o consultor de IA agora. Verifique sua chave de API.");
     } finally {
       setAiLoading(false);
     }
@@ -157,6 +166,7 @@ export function Analytics() {
 
         <div className="px-4 lg:px-8 py-8 w-full space-y-8">
           
+          {/* AI Consultant Hero */}
           <motion.div 
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
@@ -179,7 +189,11 @@ export function Analytics() {
                   disabled={aiLoading}
                   className="group flex items-center gap-3 bg-slate-900 text-white px-8 py-4 rounded-2xl font-bold text-sm tracking-tight hover:bg-slate-800 transition-all active:scale-95 disabled:opacity-50"
                 >
-                  {aiLoading ? <Zap className="size-4 animate-pulse text-amber-400" /> : <Sparkles className="size-4 text-emerald-400" />}
+                  {aiLoading ? (
+                    <Zap className="size-4 animate-pulse text-amber-400" />
+                  ) : (
+                    <Sparkles className="size-4 text-emerald-400 group-hover:rotate-12 transition-transform" />
+                  )}
                   {aiLoading ? "Consultando Mentoria..." : "Gerar Insights de Negócio"}
                 </button>
               </div>
@@ -188,23 +202,24 @@ export function Analytics() {
                 {aiLoading ? (
                   <div className="flex flex-col items-center gap-4">
                     <div className="size-10 rounded-full border-4 border-emerald-500/20 border-t-emerald-500 animate-spin" />
-                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Processando dados...</p>
+                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Processando dados da carteira...</p>
                   </div>
                 ) : aiInsight ? (
-                  <div className="text-slate-700 font-medium text-sm whitespace-pre-wrap leading-relaxed z-10">
+                  <div className="text-slate-700 font-medium text-sm whitespace-pre-wrap leading-relaxed">
                     {aiInsight}
                   </div>
                 ) : (
-                  <div className="text-center space-y-2 z-10">
+                  <div className="text-center space-y-2">
                     <Target className="size-10 text-slate-200 mx-auto" />
-                    <p className="text-xs text-slate-400 font-medium">Clique no botão para análise estratégica.</p>
+                    <p className="text-xs text-slate-400 font-medium">Clique no botão para iniciar a análise estratégica.</p>
                   </div>
                 )}
-                <BrainCircuit className="absolute bottom-4 right-4 size-16 text-slate-200/50 z-0" />
+                <BrainCircuit className="absolute bottom-4 right-4 size-16 text-slate-100 z-0" />
               </div>
             </div>
           </motion.div>
 
+          {/* Strategic KPIs */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
             {[
               { label: 'Yield on Capital', value: '18.4%', icon: TrendingUp, color: 'text-emerald-500' },
@@ -230,6 +245,7 @@ export function Analytics() {
             ))}
           </div>
 
+          {/* Charts Grid */}
           <div className="grid lg:grid-cols-3 gap-6">
             <div className="lg:col-span-2 bg-white rounded-[2.5rem] p-8 border border-slate-50 shadow-sm">
               <h3 className="text-lg font-black text-slate-900 mb-8 uppercase tracking-tight flex items-center gap-2">
@@ -237,8 +253,7 @@ export function Analytics() {
                 Monthly Disbursement Volume
               </h3>
               <div className="h-[300px]">
-                {/* 🔥 FIX: Adicionado minWidth={0} */}
-                <ResponsiveContainer width="100%" height="100%" minWidth={0}>
+                <ResponsiveContainer width="100%" height="100%">
                   <BarChart data={stats.monthlyVolume}>
                     <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
                     <XAxis 
@@ -266,8 +281,7 @@ export function Analytics() {
             <div className="bg-slate-900 rounded-[2.5rem] p-8 text-white shadow-xl shadow-slate-200 overflow-hidden relative">
               <h3 className="text-lg font-black mb-8 uppercase tracking-tight">Portfolio Health</h3>
               <div className="h-[250px] relative z-10">
-                {/* 🔥 FIX: Adicionado minWidth={0} */}
-                <ResponsiveContainer width="100%" height="100%" minWidth={0}>
+                <ResponsiveContainer width="100%" height="100%">
                   <PieChart>
                     <Pie
                       data={stats.statusDistribution}
@@ -286,7 +300,7 @@ export function Analytics() {
                   </PieChart>
                 </ResponsiveContainer>
               </div>
-              <div className="space-y-3 mt-4 relative z-10">
+              <div className="space-y-3 mt-4">
                  {stats.statusDistribution.map((entry, index) => (
                    <div key={entry.name} className="flex items-center justify-between text-xs">
                       <div className="flex items-center gap-2">

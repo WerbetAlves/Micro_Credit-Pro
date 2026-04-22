@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { ChevronLeft, ChevronRight, Calendar as CalendarIcon, Clock, User, DollarSign, TrendingUp } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { ChevronLeft, ChevronRight, Calendar as CalendarIcon, Clock, User, DollarSign } from 'lucide-react';
 import { Sidebar } from '../components/Sidebar';
 import { Header } from '../components/Header';
 import { useLanguage } from '../contexts/LanguageContext';
@@ -15,72 +15,36 @@ import {
   endOfWeek, 
   isSameMonth, 
   isSameDay, 
+  addDays, 
   eachDayOfInterval 
 } from 'date-fns';
 import { ptBR, enUS } from 'date-fns/locale';
 import { cn } from '../lib/utils';
-import { motion } from 'motion/react';
-
-interface Installment {
-  id: string;
-  loan_id: string;
-  due_date: string;
-  amount: number;
-  status: 'upcoming' | 'paid' | 'late' | 'missed';
-  created_at: string;
-  loans?: {
-    clients?: {
-      full_name: string;
-    };
-  };
-}
+import { motion, AnimatePresence } from 'motion/react';
 
 export function Calendar() {
   const { t, formatCurrency, language } = useLanguage();
   const { user } = useAuth();
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [currentDate, setCurrentDate] = useState(new Date());
-  const [search, setSearch] = useState(''); // 🔥 Estado da pesquisa
-  
-  const [installments, setInstallments] = useState<Installment[]>([]);
-  const [selectedDay, setSelectedDay] = useState<Date | null>(new Date()); // Inicia com hoje selecionado
+  const [installments, setInstallments] = useState<any[]>([]);
+  const [selectedDayInstallments, setSelectedDayInstallments] = useState<any[]>([]);
+  const [selectedDay, setSelectedDay] = useState<Date | null>(null);
 
   const loc = language === 'pt' ? ptBR : enUS;
 
   useEffect(() => {
-    if (user) {
-      fetchInstallments();
-    }
+    fetchInstallments();
   }, [user]);
 
   async function fetchInstallments() {
     if (!user) return;
-    try {
-      const { data, error } = await supabase
-        .from('installments')
-        .select('*, loans!inner(clients(full_name))')
-        .eq('loans.user_id', user.id);
-        
-      if (error) throw error;
-      if (data) setInstallments(data as any as Installment[]);
-    } catch (err: any) {
-      console.error('Error fetching calendar installments:', err.message);
-    }
+    const { data } = await supabase
+      .from('installments')
+      .select('*, loans!inner(clients(full_name))')
+      .eq('loans.user_id', user.id);
+    if (data) setInstallments(data);
   }
-
-  // Helper para lidar com a formatação do nome com segurança
-  const getClientName = (inst: Installment) => {
-    const loan: any = Array.isArray(inst.loans) ? inst.loans[0] : inst.loans;
-    return loan?.clients?.full_name || (Array.isArray(loan?.clients) ? loan?.clients[0]?.full_name : 'Cliente');
-  };
-
-  // 🔥 Filtro global baseado na pesquisa (nome do cliente)
-  const filteredInstallments = useMemo(() => {
-    if (!search) return installments;
-    return installments.filter(inst => 
-      getClientName(inst).toLowerCase().includes(search.toLowerCase())
-    );
-  }, [installments, search]);
 
   const handlePrevMonth = () => setCurrentDate(subMonths(currentDate, 1));
   const handleNextMonth = () => setCurrentDate(addMonths(currentDate, 1));
@@ -93,25 +57,21 @@ export function Calendar() {
   const calendarDays = eachDayOfInterval({ start: startDate, end: endDate });
 
   const getDayInstallments = (day: Date) => {
-    return filteredInstallments.filter(inst => isSameDay(new Date(inst.due_date), day));
+    return installments.filter(inst => isSameDay(new Date(inst.due_date), day));
   };
 
-  // Parcelas para exibir na barra lateral (do dia selecionado + filtradas)
-  const selectedDayInstallments = selectedDay ? getDayInstallments(selectedDay) : [];
+  const handleDayClick = (day: Date) => {
+    const dayInsts = getDayInstallments(day);
+    setSelectedDay(day);
+    setSelectedDayInstallments(dayInsts);
+  };
 
   return (
     <div className="flex min-h-screen bg-[#f8fafc] overflow-x-hidden">
       <Sidebar isOpen={isSidebarOpen} onClose={() => setIsSidebarOpen(false)} />
 
       <main className="flex-1 lg:ml-72 min-h-screen pb-20 w-full transition-all duration-300">
-        {/* 🔥 Header conectado à pesquisa */}
-        <Header 
-          title={t.calendar} 
-          onMenuClick={() => setIsSidebarOpen(true)}
-          searchValue={search}
-          onSearchChange={setSearch}
-          searchPlaceholder={t.searchClients}
-        />
+        <Header title={t.calendar} onMenuClick={() => setIsSidebarOpen(true)} />
 
         <div className="px-4 lg:px-8 py-8 w-full max-w-[1600px] mx-auto space-y-8">
           <div className="grid grid-cols-1 xl:grid-cols-3 gap-8">
@@ -124,15 +84,15 @@ export function Calendar() {
                     {format(currentDate, 'MMMM yyyy', { locale: loc })}
                   </h2>
                   <p className="text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em] mt-1">
-                    {t.receiptManagement || 'Gestão de Recebimentos'}
+                    {t.receiptManagement}
                   </p>
                 </div>
                 <div className="flex items-center gap-2">
                   <button onClick={handlePrevMonth} className="p-3 hover:bg-slate-50 rounded-2xl text-slate-400 transition-all border border-slate-100 shadow-sm">
                     <ChevronLeft className="size-5" />
                   </button>
-                  <button onClick={() => { setCurrentDate(new Date()); setSelectedDay(new Date()); }} className="px-5 py-3 hover:bg-slate-50 rounded-2xl text-[10px] font-black uppercase tracking-widest text-slate-600 transition-all border border-slate-100 shadow-sm">
-                    {t.today || 'Hoje'}
+                  <button onClick={() => setCurrentDate(new Date())} className="px-5 py-3 hover:bg-slate-50 rounded-2xl text-[10px] font-black uppercase tracking-widest text-slate-600 transition-all border border-slate-100 shadow-sm">
+                    {t.today}
                   </button>
                   <button onClick={handleNextMonth} className="p-3 hover:bg-slate-50 rounded-2xl text-slate-400 transition-all border border-slate-100 shadow-sm">
                     <ChevronRight className="size-5" />
@@ -140,6 +100,7 @@ export function Calendar() {
                 </div>
               </div>
 
+              {/* Days Header */}
               <div className="grid grid-cols-7 mb-4">
                 {['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sab'].map(d => (
                   <div key={d} className="text-center text-[10px] font-black uppercase tracking-widest text-slate-400 py-3">
@@ -148,6 +109,7 @@ export function Calendar() {
                 ))}
               </div>
 
+              {/* Grid Days */}
               <div className="grid grid-cols-7 gap-px bg-slate-100 border border-slate-100 rounded-3xl overflow-hidden shadow-inner">
                 {calendarDays.map((day, idx) => {
                   const dayInsts = getDayInstallments(day);
@@ -158,7 +120,7 @@ export function Calendar() {
                   return (
                     <div 
                       key={idx}
-                      onClick={() => setSelectedDay(day)}
+                      onClick={() => handleDayClick(day)}
                       className={cn(
                         "min-h-[100px] lg:min-h-[140px] p-3 transition-all cursor-pointer relative",
                         isCurrentMonth ? "bg-white" : "bg-slate-50/50 grayscale opacity-40",
@@ -184,12 +146,12 @@ export function Calendar() {
                             "text-[8px] font-bold p-1 rounded-md truncate border",
                             inst.status === 'paid' ? "bg-emerald-50 text-emerald-600 border-emerald-100" : "bg-amber-50 text-amber-600 border-amber-100"
                           )}>
-                            {getClientName(inst).split(' ')[0]} - {formatCurrency(inst.amount)}
+                            {inst.loans?.clients?.full_name.split(' ')[0]} - {formatCurrency(inst.amount)}
                           </div>
                         ))}
                         {dayInsts.length > 3 && (
                           <p className="text-[8px] font-black text-slate-400 text-center uppercase tracking-widest mt-1">
-                            + {dayInsts.length - 3} {t.more || 'Mais'}
+                            + {dayInsts.length - 3} {t.more}
                           </p>
                         )}
                       </div>
@@ -205,7 +167,7 @@ export function Calendar() {
                 <CalendarIcon className="absolute -bottom-10 -right-10 size-48 opacity-5 rotate-12" />
                 <h3 className="text-xl font-black uppercase tracking-tight mb-8 relative z-10 flex items-center gap-2">
                   <Clock className="size-5 text-emerald-400" />
-                  {selectedDay ? format(selectedDay, "dd 'de' MMMM", { locale: loc }) : t.selectDay || 'Selecione um Dia'}
+                  {selectedDay ? format(selectedDay, "dd 'de' MMMM", { locale: loc }) : t.selectDay}
                 </h3>
                 
                 <div className="space-y-6 relative z-10">
@@ -215,7 +177,7 @@ export function Calendar() {
                         initial={{ opacity: 0, x: 20 }}
                         animate={{ opacity: 1, x: 0 }}
                         transition={{ delay: idx * 0.1 }}
-                        key={inst.id} 
+                        key={idx} 
                         className="bg-white/5 backdrop-blur-sm border border-white/10 p-5 rounded-3xl hover:bg-white/10 transition-all group"
                       >
                         <div className="flex justify-between items-start mb-4">
@@ -224,26 +186,26 @@ export function Calendar() {
                               <User className="size-4 text-emerald-400" />
                             </div>
                             <div>
-                                <p className="text-xs font-black uppercase tracking-tight text-white mb-0.5">{getClientName(inst)}</p>
-                                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{t.monthlyInstallmentLabel || 'Parcela'}</p>
+                                <p className="text-xs font-black uppercase tracking-tight text-white mb-0.5">{inst.loans?.clients?.full_name}</p>
+                                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{t.monthlyInstallmentLabel}</p>
                             </div>
                           </div>
                           <span className={cn(
                             "px-3 py-1 rounded-full text-[8px] font-black uppercase tracking-widest",
                             inst.status === 'paid' ? "bg-emerald-500/20 text-emerald-400" : "bg-amber-500/20 text-amber-400"
                           )}>
-                            {t[inst.status as keyof typeof t] || inst.status}
+                            {inst.status === 'paid' ? t.paid : t.pending}
                           </span>
                         </div>
                         
                         <div className="flex items-center justify-between pt-4 border-t border-white/5">
-                            <div className="flex items-center gap-1.5">
+                           <div className="flex items-center gap-1.5">
                               <DollarSign className="size-3 text-emerald-500" />
                               <span className="text-sm font-black text-white">{formatCurrency(inst.amount)}</span>
-                            </div>
-                            <button className="text-[10px] font-black uppercase tracking-[0.2em] text-emerald-400 hover:text-emerald-300 transition-all">
-                              {t.notify || 'Notificar'}
-                            </button>
+                           </div>
+                           <button className="text-[10px] font-black uppercase tracking-[0.2em] text-emerald-400 hover:text-emerald-300 transition-all">
+                             {t.notify}
+                           </button>
                         </div>
                       </motion.div>
                     ))
@@ -252,23 +214,20 @@ export function Calendar() {
                       <div className="size-16 bg-white/5 rounded-[2rem] flex items-center justify-center mx-auto">
                         <CalendarIcon className="size-8" />
                       </div>
-                      <p className="text-xs font-bold text-slate-400 uppercase tracking-[0.2em]">
-                        {search ? 'Nenhum resultado' : (t.noReceiptsToday || 'Sem recebimentos')}
-                      </p>
+                      <p className="text-xs font-bold text-slate-400 uppercase tracking-[0.2em]">{t.noReceiptsToday}</p>
                     </div>
                   )}
                 </div>
               </div>
 
+              {/* Summary Stats */}
               <div className="bg-white rounded-[2.5rem] p-8 border border-slate-50 shadow-sm space-y-6">
-                 <h4 className="text-sm font-black uppercase tracking-[0.2em] text-slate-400">{t.monthSummary || 'Resumo do Mês'}</h4>
+                 <h4 className="text-sm font-black uppercase tracking-[0.2em] text-slate-400">{t.monthSummary}</h4>
                  <div className="grid grid-cols-1 gap-4">
                     <div className="bg-slate-50 p-6 rounded-3xl flex justify-between items-center">
                        <div>
-                          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">{t.totalToReceive || 'A Receber'}</p>
-                          <p className="text-xl font-black text-slate-900">
-                            {formatCurrency(filteredInstallments.filter(i => isSameMonth(new Date(i.due_date), currentDate)).reduce((acc, curr) => acc + curr.amount, 0))}
-                          </p>
+                          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">{t.totalToReceive}</p>
+                          <p className="text-xl font-black text-slate-900">{formatCurrency(installments.filter(i => isSameMonth(new Date(i.due_date), currentDate)).reduce((acc, curr) => acc + curr.amount, 0))}</p>
                        </div>
                        <TrendingUp className="size-8 text-emerald-500 opacity-20" />
                     </div>
@@ -280,5 +239,25 @@ export function Calendar() {
         </div>
       </main>
     </div>
+  );
+}
+
+function TrendingUp(props: any) {
+  return (
+    <svg
+      {...props}
+      xmlns="http://www.w3.org/2000/svg"
+      width="24"
+      height="24"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <polyline points="22 7 13.5 15.5 8.5 10.5 2 17" />
+      <polyline points="16 7 22 7 22 13" />
+    </svg>
   );
 }

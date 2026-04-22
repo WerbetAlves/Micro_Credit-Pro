@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Landmark, MoreVertical, Edit2, Trash2, X, AlertCircle, User, Filter, FileText, CheckCircle, ExternalLink, Send } from 'lucide-react';
+import { Search, Plus, Landmark, Calendar, MoreVertical, Edit2, Trash2, X, AlertCircle, User, Filter, FileText, CheckCircle, ExternalLink, Send } from 'lucide-react';
 import { Sidebar } from '../components/Sidebar';
 import { Header } from '../components/Header';
 import { useLanguage } from '../contexts/LanguageContext';
@@ -8,13 +8,6 @@ import { supabase } from '../lib/supabase';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../lib/utils';
 import Markdown from 'react-markdown';
-
-// --- CONFIGURAÇÃO DE LIMITES DO SAAS ---
-const PLAN_LIMITS = {
-  free: { maxLoans: 3, label: 'Gratuito' },
-  pro: { maxLoans: 50, label: 'Profissional' },
-  enterprise: { maxLoans: 999999, label: 'Enterprise' },
-};
 
 interface Loan {
   id: string;
@@ -50,23 +43,26 @@ interface Client {
 
 export function Loans() {
   const { t, formatCurrency, formatDate } = useLanguage();
-  const { user, profile } = useAuth();
+  const { user } = useAuth();
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [loans, setLoans] = useState<Loan[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
   const [loading, setLoading] = useState(true);
-  const [search, setSearch] = useState(''); // 🔥 Estado da pesquisa
+  const [search, setSearch] = useState('');
   const [filterStatus, setFilterStatus] = useState<string>('all');
   
+  // Modal states
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingLoan, setEditingLoan] = useState<Loan | null>(null);
   const [formLoading, setFormLoading] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
 
+  // Contract states
   const [isContractModalOpen, setIsContractModalOpen] = useState(false);
   const [selectedLoanForContract, setSelectedLoanForContract] = useState<Loan | null>(null);
   const [isValidatingContract, setIsValidatingContract] = useState(false);
 
+  // Form states
   const [formData, setFormData] = useState<{
     client_id: string;
     principal_amount: number;
@@ -96,14 +92,13 @@ export function Loans() {
   });
 
   useEffect(() => {
-    if (user) {
-      fetchLoans();
-      fetchClients();
-    }
+    fetchLoans();
+    fetchClients();
   }, [user]);
 
   const handleValidateContract = async (loanId: string) => {
     setIsValidatingContract(true);
+    // Simula validação com órgão regulador
     await new Promise(resolve => setTimeout(resolve, 2000));
     try {
       await supabase.from('loans').update({ legal_validation_status: 'validated' }).eq('id', loanId);
@@ -175,16 +170,6 @@ export function Loans() {
         status: loan.status
       });
     } else {
-      const userPlan = profile?.plan_type || 'free';
-      const limit = PLAN_LIMITS[userPlan as keyof typeof PLAN_LIMITS].maxLoans;
-
-      if (loans.length >= limit) {
-        alert(
-          `Limite atingido! O seu plano ${PLAN_LIMITS[userPlan as keyof typeof PLAN_LIMITS].label} permite apenas ${limit} empréstimos criados.\n\nFaça upgrade para conceder empréstimos ilimitados!`
-        );
-        return;
-      }
-
       setEditingLoan(null);
       setFormData({
         client_id: '',
@@ -264,6 +249,7 @@ export function Loans() {
           .single();
         if (error) throw error;
 
+        // Record payout transaction and generate installments for new loans
         if (newLoan) {
           await supabase.from('transactions').insert({
             user_id: user.id,
@@ -275,6 +261,7 @@ export function Loans() {
             description: `Empréstimo concedido: ${newLoan.id.split('-')[0]}`
           });
 
+          // Generate Installments
           const installmentsList = [];
           let currentDate = new Date(formData.due_date);
           let installmentsCreated = 0;
@@ -301,6 +288,7 @@ export function Loans() {
 
             if (installmentsCreated >= numDuration) break;
 
+            // Increment date based on frequency
             if (frequency === 'monthly') {
               currentDate.setMonth(currentDate.getMonth() + 1);
             } else if (frequency === 'daily') {
@@ -343,10 +331,8 @@ export function Loans() {
     }
   };
 
-  // 🔥 Lógica de filtragem funcional
   const filteredLoans = loans.filter(l => {
-    const matchesSearch = l.clients?.full_name?.toLowerCase().includes(search.toLowerCase()) || 
-                         l.id.toLowerCase().includes(search.toLowerCase());
+    const matchesSearch = l.clients?.full_name.toLowerCase().includes(search.toLowerCase());
     const matchesFilter = filterStatus === 'all' || l.status === filterStatus;
     return matchesSearch && matchesFilter;
   });
@@ -356,14 +342,7 @@ export function Loans() {
       <Sidebar isOpen={isSidebarOpen} onClose={() => setIsSidebarOpen(false)} />
 
       <main className="flex-1 lg:ml-72 min-h-screen pb-20 w-full transition-all duration-300">
-        {/* 🔥 Header agora recebe as props da pesquisa */}
-        <Header 
-          title={t.loanList} 
-          onMenuClick={() => setIsSidebarOpen(true)}
-          searchValue={search}
-          onSearchChange={setSearch}
-          searchPlaceholder={t.searchClients}
-        >
+        <Header title={t.loanList} onMenuClick={() => setIsSidebarOpen(true)}>
           <button 
             onClick={() => handleOpenModal()}
             className="flex items-center gap-2 bg-primary-500 text-white px-4 py-2.5 rounded-2xl font-bold text-xs uppercase tracking-widest shadow-lg shadow-primary-200 hover:bg-primary-600 transition-all active:scale-95"
@@ -374,19 +353,19 @@ export function Loans() {
         </Header>
 
         <div className="px-4 lg:px-8 py-8 w-full transition-all">
-          {/* Filters & Plan Indicator */}
+          {/* Filters */}
           <div className="flex flex-col sm:flex-row gap-4 mb-8">
-            {/* 🔥 Removida a barra de pesquisa redundante daqui, pois agora está no Header */}
-            
-            {/* Indicador do Plano */}
-            <div className="px-6 py-4 bg-white rounded-[1.5rem] border border-slate-100 flex items-center gap-3">
-               <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-               <span className="text-xs font-bold text-slate-500 uppercase tracking-widest">
-                 Plano: {profile?.plan_type || 'A carregar...'}
-               </span>
+            <div className="flex-1 relative">
+              <Search className="absolute left-4 top-1/2 -translate-y-1/2 size-5 text-slate-300" />
+              <input 
+                type="text" 
+                placeholder={t.searchClients} 
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="w-full pl-12 pr-4 py-4 bg-white border border-slate-100 rounded-[1.5rem] shadow-sm focus:ring-2 focus:ring-emerald-100 outline-none transition-all text-sm font-medium text-slate-600"
+              />
             </div>
-
-            <div className="flex items-center gap-2 bg-white px-4 py-2 border border-slate-100 rounded-[1.5rem] shadow-sm ml-auto">
+            <div className="flex items-center gap-2 bg-white px-4 py-2 border border-slate-100 rounded-[1.5rem] shadow-sm">
                 <Filter className="size-4 text-slate-400" />
                 <select 
                     value={filterStatus}
@@ -410,7 +389,7 @@ export function Loans() {
                     ))
                 ) : filteredLoans.length === 0 ? (
                     <div className="col-span-full py-20 bg-white rounded-[2rem] border border-slate-50 border-dashed text-center">
-                        <p className="text-slate-400 font-medium">{t.noInstallments}</p>
+                        <p className="text-slate-400 font-medium">{t.noClients}</p>
                     </div>
                 ) : (
                     filteredLoans.map((loan) => (
@@ -440,7 +419,7 @@ export function Loans() {
                                         loan.status === 'pending' ? "bg-amber-50 text-amber-600" :
                                         loan.status === 'repaid' ? "bg-blue-50 text-blue-600" : "bg-red-50 text-red-600"
                                     )}>
-                                        {t[loan.status as keyof typeof t] || loan.status}
+                                        {t[loan.status]}
                                     </span>
                                 </div>
 
@@ -547,7 +526,7 @@ export function Loans() {
                         type="number"
                         required
                         value={formData.principal_amount || ''}
-                        onFocus={e => (e.target as HTMLInputElement).select()}
+                        onFocus={e => e.target.select()}
                         onChange={e => setFormData({...formData, principal_amount: Number(e.target.value)})}
                         className="w-full px-4 py-4 bg-slate-50 border-none rounded-2xl focus:ring-2 focus:ring-emerald-500 outline-none text-sm font-bold text-slate-900 transition-all"
                       />
@@ -575,7 +554,7 @@ export function Loans() {
                         step="0.01"
                         required
                         value={formData.interest_rate || ''}
-                        onFocus={e => (e.target as HTMLInputElement).select()}
+                        onFocus={e => e.target.select()}
                         onChange={e => setFormData({...formData, interest_rate: Number(e.target.value)})}
                         className="w-full px-4 py-4 bg-slate-50 border-none rounded-2xl focus:ring-2 focus:ring-emerald-500 outline-none text-sm font-bold text-slate-900 transition-all"
                       />
@@ -603,7 +582,7 @@ export function Loans() {
                            max="120"
                            required
                            value={formData.term_months || ''}
-                           onFocus={e => (e.target as HTMLInputElement).select()}
+                           onFocus={e => e.target.select()}
                            onChange={e => setFormData({...formData, term_months: Number(e.target.value)})}
                            className="flex-1 px-4 py-4 bg-slate-50 border-none rounded-2xl focus:ring-2 focus:ring-emerald-500 outline-none text-sm font-bold text-slate-900 transition-all"
                          />
@@ -672,6 +651,7 @@ export function Loans() {
                                   : [...formData.payment_days, day];
                                 setFormData({ ...formData, payment_days: days });
                               } else {
+                                // Para semanal e quinzenal, permite apenas um dia
                                 setFormData({ ...formData, payment_days: [day] });
                               }
                             }}
@@ -682,7 +662,7 @@ export function Loans() {
                                 : "bg-slate-50 text-slate-400 hover:bg-slate-100"
                             )}
                           >
-                            {t[day as keyof typeof t] || day}
+                            {t[day]}
                           </button>
                         ))}
                       </div>
@@ -726,13 +706,13 @@ export function Loans() {
                     <div className="flex justify-between items-center mb-2">
                         <span className="text-[10px] font-bold uppercase tracking-widest opacity-50">{t.monthlyInstallment}</span>
                         <span className="text-xl font-black text-emerald-400">
-                            {formatCurrency(calculateLoan(formData.principal_amount, formData.interest_rate, formData.term_months, formData.interest_type, formData.payment_frequency).monthlyInstal)}
+                            {formatCurrency(calculateLoan(formData.principal_amount, formData.interest_rate, formData.term_months, formData.interest_type).monthlyInstal)}
                         </span>
                     </div>
                     <div className="flex justify-between items-center">
                         <span className="text-[10px] font-bold uppercase tracking-widest opacity-50">{t.totalRepayment}</span>
                         <span className="text-sm font-bold">
-                            {formatCurrency(calculateLoan(formData.principal_amount, formData.interest_rate, formData.term_months, formData.interest_type, formData.payment_frequency).totalRepay)}
+                            {formatCurrency(calculateLoan(formData.principal_amount, formData.interest_rate, formData.term_months, formData.interest_type).totalRepay)}
                         </span>
                     </div>
                   </div>
@@ -830,13 +810,13 @@ export function Loans() {
                 
                 <div className="flex gap-3 w-full sm:w-auto">
                    <button 
-                    onClick={() => handleValidateContract(selectedLoanForContract!.id)}
-                    disabled={isValidatingContract || selectedLoanForContract!.legal_validation_status === 'validated'}
+                    onClick={() => handleValidateContract(selectedLoanForContract.id)}
+                    disabled={isValidatingContract || selectedLoanForContract.legal_validation_status === 'validated'}
                     className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-6 py-3 bg-slate-900 text-white rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-slate-800 transition-all disabled:opacity-50"
                   >
                     {isValidatingContract ? (
                       t.validating
-                    ) : selectedLoanForContract!.legal_validation_status === 'validated' ? (
+                    ) : selectedLoanForContract.legal_validation_status === 'validated' ? (
                       <>
                         <CheckCircle className="size-4" />
                         {t.validated}

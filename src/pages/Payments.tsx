@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Search, Wallet, Calendar, CheckCircle2, Filter, User, MoreVertical, Plus, Edit2, Trash2, X, AlertCircle } from 'lucide-react';
+import { Search, Wallet, Calendar, CheckCircle2, XCircle, Clock, Filter, User, MoreVertical, Plus, Edit2, Trash2, X, AlertCircle } from 'lucide-react';
 import { Sidebar } from '../components/Sidebar';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useAuth } from '../contexts/AuthContext';
@@ -22,20 +22,12 @@ interface Installment {
   };
 }
 
-interface Loan {
-  id: string;
-  client_id: string;
-  clients?: {
-    full_name: string;
-  };
-}
-
 export function Payments() {
   const { t, formatCurrency, formatDate } = useLanguage();
   const { user } = useAuth();
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [installments, setInstallments] = useState<Installment[]>([]);
-  const [loans, setLoans] = useState<Loan[]>([]);
+  const [loans, setLoans] = useState<{id: string, client_id: string, clients?: {full_name: string}}[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [filterStatus, setFilterStatus] = useState<string>('all');
@@ -64,11 +56,9 @@ export function Payments() {
   });
 
   useEffect(() => {
-    if (user) {
-      fetchInstallments();
-      fetchLoans();
-      fetchWallets();
-    }
+    fetchInstallments();
+    fetchLoans();
+    fetchWallets();
   }, [user]);
 
   async function fetchWallets() {
@@ -77,7 +67,7 @@ export function Payments() {
       .from('wallets')
       .select('id, name')
       .eq('user_id', user.id);
-    if (data && data.length > 0) setWallets(data);
+    if (data) setWallets(data);
     else setWallets([{id: 'default', name: t.mainPortfolio}]);
   }
 
@@ -87,9 +77,7 @@ export function Payments() {
       .from('loans')
       .select('id, client_id, clients(full_name)')
       .eq('user_id', user.id);
-      
-    // 🔥 Correção: Usamos 'as any as Loan[]' para ignorar o conflito estrutural do Join do Supabase
-    if (data) setLoans(data as any as Loan[]);
+    if (data) setLoans(data as any);
   }
 
   async function fetchInstallments() {
@@ -114,7 +102,7 @@ export function Payments() {
 
       if (error) throw error;
       
-      setInstallments(data as any as Installment[]);
+      setInstallments(data || []);
     } catch (err: any) {
       console.error('Error fetching installments:', err.message);
     } finally {
@@ -136,10 +124,10 @@ export function Payments() {
     
     setFormLoading(true);
     try {
-      // 🔥 Correção: Adicionamos a coluna 'status' ao select
+      // Find installment
       const { data: inst } = await supabase
         .from('installments')
-        .select('amount, status, loans(id, client_id, clients(full_name))')
+        .select('amount, loans(id, client_id, clients(full_name))')
         .eq('id', installmentToPay)
         .single();
       
@@ -149,6 +137,8 @@ export function Payments() {
       const remaining = inst.amount - paidAmount;
 
       if (isPartial) {
+        // Reduz o valor da parcela atual mas mantém o status se ainda houver saldo
+        // Se o valor for reduzido a zero, vira 'paid'
         await supabase
           .from('installments')
           .update({ 
@@ -163,10 +153,7 @@ export function Payments() {
           .eq('id', installmentToPay);
       }
       
-      // Tratamento seguro caso inst.loans seja retornado como array pelo Supabase
-      const loan: any = Array.isArray(inst.loans) ? inst.loans[0] : inst.loans;
-      const clientName = loan?.clients?.full_name || (Array.isArray(loan?.clients) ? loan?.clients[0]?.full_name : '');
-
+      const loan: any = inst.loans;
       await supabase.from('transactions').insert({
         user_id: user.id,
         client_id: loan?.client_id,
@@ -174,7 +161,7 @@ export function Payments() {
         type: 'income',
         category: 'payment_received',
         amount: paidAmount,
-        description: `${isPartial ? t.partialPayment : t.fullPayment} - ${clientName}`
+        description: `${isPartial ? t.partialPayment : t.fullPayment} - ${loan?.clients?.full_name || ''}`
       });
 
       // Update Wallet Balance
@@ -411,8 +398,7 @@ export function Payments() {
                         inst.status === 'paid' ? "bg-emerald-50 text-emerald-600" :
                         inst.status === 'upcoming' ? "bg-amber-50 text-amber-600" : "bg-red-50 text-red-600"
                       )}>
-                        {/* 🔥 Correção: as keyof typeof t */}
-                        {t[inst.status as keyof typeof t]}
+                        {t[inst.status]}
                       </div>
                     </div>
 
@@ -542,7 +528,7 @@ export function Payments() {
                       <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400 ml-1">{t.status}</label>
                       <select 
                         value={formData.status}
-                        onChange={e => setFormData({...formData, status: e.target.value as 'upcoming' | 'paid' | 'late' | 'missed'})}
+                        onChange={e => setFormData({...formData, status: e.target.value as any})}
                         className="w-full px-4 py-4 bg-slate-50 border-none rounded-2xl focus:ring-2 focus:ring-emerald-500 outline-none text-sm font-bold text-slate-900 transition-all appearance-none cursor-pointer"
                       >
                         <option value="upcoming">{t.upcoming}</option>
@@ -586,7 +572,6 @@ export function Payments() {
           </div>
         )}
       </AnimatePresence>
-
       {/* Wallet Selection Modal */}
       <AnimatePresence>
         {isWalletModalOpen && (
@@ -627,7 +612,7 @@ export function Payments() {
                         onClick={() => setSelectedWalletId(w.id)}
                         className={cn(
                           "w-full p-4 rounded-2xl flex items-center justify-between border-2 transition-all",
-                          selectedWalletId === w.id ? "bg-emerald-50 border-emerald-500 text-emerald-600" : "bg-white border-slate-100 text-slate-500 hover:border-slate-200"
+                          selectedWalletId === w.id ? "bg-emerald-50 border-emerald-500 text-emerald-600" : "bg-white border-slate-100 text-slate-500 hove:border-slate-200"
                         )}
                       >
                         <div className="flex items-center gap-3 font-bold text-sm">

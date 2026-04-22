@@ -372,7 +372,6 @@ export const locales = {
     userManagement: "User Management",
     subscriptionPlans: "Subscription Plans",
     systemLogs: "System Logs",
-    search: "Search...", // 🔥 Adicionado aqui
   },
   pt: {
     dashboard: "Visão Geral do Painel",
@@ -727,7 +726,7 @@ export const locales = {
     clientStepDesc: "Adicione as informações básicas de quem vai receber o crédito.",
     registerClient: "Cadastrar Cliente",
     firstOperation: "Realizar sua Primeira Operação",
-    loanStepDesc: "Use the simulator to make the loan and generate the installments.",
+    loanStepDesc: "Use o simulador para efetivar o empréstimo e gerar as parcelas.",
     simulateNow: "Simular Agora",
     // Activity
     for: "para",
@@ -748,7 +747,6 @@ export const locales = {
     userManagement: "Gestão de Usuários",
     subscriptionPlans: "Planos de Assinatura",
     systemLogs: "Logs do Sistema",
-    search: "Pesquisar...", // 🔥 Adicionado aqui
   }
 };
 

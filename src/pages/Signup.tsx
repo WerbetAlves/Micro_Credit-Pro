@@ -13,17 +13,14 @@ export function Signup() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
-  // Adicionamos um estado para saber se o utilizador precisa de confirmar o e-mail
-  const [needsEmailConfirmation, setNeedsEmailConfirmation] = useState(false);
 
   const handleSignup = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setError(null);
-    setSuccess(false);
 
     try {
-      const { data, error } = await supabase.auth.signUp({
+      const { error } = await supabase.auth.signUp({
         email,
         password,
         options: {
@@ -39,14 +36,7 @@ export function Signup() {
       } else {
         setSuccess(true);
         setLoading(false);
-        
-        // Verifica se a conta foi criada mas a sessão está nula (Significa que requer confirmação de e-mail)
-        if (data.user && !data.session) {
-          setNeedsEmailConfirmation(true);
-          // Não redirecionamos automaticamente para ele ter tempo de ler a mensagem
-        } else {
-          setTimeout(() => navigate('/login'), 3000);
-        }
+        setTimeout(() => navigate('/login'), 3000);
       }
     } catch (err: any) {
       const message = err.message === 'Failed to fetch'
@@ -84,16 +74,9 @@ export function Signup() {
           )}
 
           {success && (
-            <div className="mb-6 p-4 bg-emerald-50 border border-emerald-100 rounded-2xl flex items-start gap-3 text-emerald-600 text-sm font-medium">
-              <CheckCircle2 className="size-5 shrink-0 mt-0.5" />
-              <div>
-                <p className="font-bold">{t.successSignup || 'Conta criada com sucesso!'}</p>
-                {needsEmailConfirmation && (
-                  <p className="mt-1 text-emerald-700/80 text-xs">
-                    Enviámos um link de confirmação para o seu e-mail. Por favor, verifique a sua caixa de entrada (ou spam) para ativar a sua conta.
-                  </p>
-                )}
-              </div>
+            <div className="mb-6 p-4 bg-emerald-50 border border-emerald-100 rounded-2xl flex items-center gap-3 text-emerald-600 text-sm font-medium">
+              <CheckCircle2 className="size-5 shrink-0" />
+              {t.successSignup}
             </div>
           )}
 
@@ -109,7 +92,6 @@ export function Signup() {
                   onChange={(e) => setFullName(e.target.value)}
                   className="w-full pl-12 pr-4 py-4 bg-slate-50 border-none rounded-2xl focus:ring-2 focus:ring-emerald-500 outline-none text-slate-900 font-medium transition-all"
                   placeholder="John Doe"
-                  disabled={success}
                 />
               </div>
             </div>
@@ -125,7 +107,6 @@ export function Signup() {
                   onChange={(e) => setEmail(e.target.value)}
                   className="w-full pl-12 pr-4 py-4 bg-slate-50 border-none rounded-2xl focus:ring-2 focus:ring-emerald-500 outline-none text-slate-900 font-medium transition-all"
                   placeholder="name@company.com"
-                  disabled={success}
                 />
               </div>
             </div>
@@ -141,30 +122,17 @@ export function Signup() {
                   onChange={(e) => setPassword(e.target.value)}
                   className="w-full pl-12 pr-4 py-4 bg-slate-50 border-none rounded-2xl focus:ring-2 focus:ring-emerald-500 outline-none text-slate-900 font-medium transition-all"
                   placeholder="••••••••"
-                  disabled={success}
-                  minLength={6}
                 />
               </div>
             </div>
 
-            {(!success || !needsEmailConfirmation) && (
-              <button
-                type="submit"
-                disabled={loading || success}
-                className="w-full bg-emerald-500 text-white font-black py-4 rounded-2xl hover:bg-emerald-600 shadow-lg shadow-emerald-200 transition-all active:scale-[0.98] disabled:opacity-50 uppercase tracking-[0.15em] text-xs"
-              >
-                {loading ? t.signingUp : t.signup}
-              </button>
-            )}
-            
-            {success && needsEmailConfirmation && (
-               <Link 
-                 to="/login"
-                 className="block text-center w-full bg-slate-900 text-white font-black py-4 rounded-2xl hover:bg-slate-800 transition-all active:scale-[0.98] uppercase tracking-[0.15em] text-xs"
-               >
-                 Ir para o Login
-               </Link>
-            )}
+            <button
+              type="submit"
+              disabled={loading || success}
+              className="w-full bg-emerald-500 text-white font-black py-4 rounded-2xl hover:bg-emerald-600 shadow-lg shadow-emerald-200 transition-all active:scale-[0.98] disabled:opacity-50 uppercase tracking-[0.15em] text-xs"
+            >
+              {loading ? t.signingUp : t.signup}
+            </button>
           </form>
 
           <p className="mt-8 text-center text-slate-500 text-sm font-medium">

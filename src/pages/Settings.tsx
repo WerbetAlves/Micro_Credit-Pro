@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect } from 'react';
 import { CreditCard, Shield, Zap, Check, Star, Settings as SettingsIcon, FileText, Plus, Trash2, Camera, MapPin, Phone, AlertCircle, Download, Upload } from 'lucide-react';
 import { Sidebar } from '../components/Sidebar';
 import { Header } from '../components/Header';
@@ -9,46 +9,25 @@ import { supabase } from '../lib/supabase';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../lib/utils';
 
-interface PaymentMethod {
-  id: string;
-  type: string;
-  last4: string;
-  brand: string;
-  name: string;
-}
-
-interface Profile {
-  id: string;
-  full_name: string;
-  business_name: string;
-  document_id: string;
-  phone: string;
-  address: string;
-  avatar_url: string;
-  plan_type: 'free' | 'pro' | 'enterprise';
-  payment_methods: PaymentMethod[];
-}
-
-interface LocationState {
-  activeTab?: 'profile' | 'billing' | 'payments' | 'privacy';
-}
-
 export function Settings() {
   const { t } = useLanguage();
   const { user } = useAuth();
   const location = useLocation();
-  const fileInputRef = useRef<HTMLInputElement>(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-  const [search, setSearch] = useState(''); // 🔥 Estado da pesquisa global
   
-  const locationState = location.state as LocationState | null;
-  const initialTab = locationState?.activeTab || 'profile';
+  // Use state from navigation or default to 'profile'
+  const initialTab = (location.state as any)?.activeTab || 'profile';
   const [activeTab, setActiveTab] = useState<'profile' | 'billing' | 'payments' | 'privacy'>(initialTab);
 
   const { signOut } = useAuth();
-  const [profile, setProfile] = useState<Profile | null>(null);
+
+  useEffect(() => {
+    if ((location.state as any)?.activeTab) {
+      setActiveTab((location.state as any).activeTab);
+    }
+  }, [location.state]);
+  const [profile, setProfile] = useState<any>(null);
   const [isUpdating, setIsUpdating] = useState(false);
-  const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
 
   useEffect(() => {
     fetchProfile();
@@ -56,44 +35,9 @@ export function Settings() {
 
   async function fetchProfile() {
     if (!user) return;
-    const { data } = await supabase.from('profiles').select('*').eq('id', user.id).single();
-    if (data) setProfile(data as Profile);
+    const { data } = await supabase.from('profiles').select('*').single();
+    if (data) setProfile(data);
   }
-
-  const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file || !user) return;
-
-    setIsUploadingAvatar(true);
-    try {
-      const fileExt = file.name.split('.').pop();
-      const fileName = `${user.id}-${Math.random()}.${fileExt}`;
-
-      const { error: uploadError } = await supabase.storage
-        .from('avatars')
-        .upload(fileName, file);
-
-      if (uploadError) throw uploadError;
-
-      const { data } = supabase.storage.from('avatars').getPublicUrl(fileName);
-
-      const { error: updateError } = await supabase
-        .from('profiles')
-        .update({ avatar_url: data.publicUrl })
-        .eq('id', user.id);
-
-      if (updateError) throw updateError;
-
-      await fetchProfile();
-      alert('Foto de perfil atualizada com sucesso!');
-    } catch (err: any) {
-      console.error('Erro no upload do avatar:', err.message);
-      alert('Erro ao enviar imagem. Verifique se criou o bucket "avatars" público no Supabase.');
-    } finally {
-      setIsUploadingAvatar(false);
-      if (fileInputRef.current) fileInputRef.current.value = '';
-    }
-  };
 
   const handleUpdateProfile = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -122,6 +66,8 @@ export function Settings() {
   const handleUpgrade = async (plan: string) => {
     if (!user || isUpdating) return;
     setIsUpdating(true);
+    
+    // Simulando tempo de processamento de pagamento
     await new Promise(r => setTimeout(r, 1500));
     
     try {
@@ -129,8 +75,8 @@ export function Settings() {
       if (error) throw error;
       await fetchProfile();
       alert(`Parabéns! Você acaba de migrar para o plano ${plan.toUpperCase()}`);
-    } catch (error) {
-      console.error("Upgrade error:", error);
+    } catch (e: any) {
+      console.error(e);
       alert('Erro ao processar assinatura.');
     } finally {
       setIsUpdating(false);
@@ -151,18 +97,18 @@ export function Settings() {
     try {
       await supabase.from('profiles').update({ payment_methods: updatedMethods }).eq('id', user?.id);
       await fetchProfile();
-    } catch (error) {
+    } catch (err) {
       alert('Erro ao adicionar método.');
     }
   };
 
   const handleRemovePaymentMethod = async (id: string) => {
     if (!profile) return;
-    const updatedMethods = profile.payment_methods.filter((m: PaymentMethod) => m.id !== id);
+    const updatedMethods = profile.payment_methods.filter((m: any) => m.id !== id);
     try {
       await supabase.from('profiles').update({ payment_methods: updatedMethods }).eq('id', user?.id);
       await fetchProfile();
-    } catch (error) {
+    } catch (err) {
       alert('Erro ao remover método.');
     }
   };
@@ -174,14 +120,19 @@ export function Settings() {
 
     setIsUpdating(true);
     try {
+      // In a real DB we'd use cascading or multiple deletes
+      // In simulation we'll clear specific tables
       const tables = ['installments', 'loans', 'clients', 'transactions', 'notifications', 'support_tickets'];
+      
       for (const table of tables) {
+        // Mocking the delete of user data
+        // In local simulation we'd filter by user_id
         await supabase.from(table).delete().eq('user_id', user.id);
       }
+      
       alert(t.deleteDataSuccess);
-    } catch (error) {
-      console.error("Delete data error:", error);
-      alert('Erro ao limpar os dados.');
+    } catch (err: any) {
+      alert('Error clearing data.');
     } finally {
       setIsUpdating(false);
     }
@@ -194,19 +145,17 @@ export function Settings() {
 
     setIsUpdating(true);
     try {
+      // 1. Delete all data
       const tables = ['installments', 'loans', 'clients', 'transactions', 'notifications', 'support_tickets', 'wallets', 'profiles'];
       for (const table of tables) {
-        if (table === 'profiles') {
-          await supabase.from(table).delete().eq('id', user.id);
-        } else {
-          await supabase.from(table).delete().eq('user_id', user.id);
-        }
+        await supabase.from(table).delete().eq('user_id', user.id);
       }
+
+      // 2. Sign Out
       alert(t.deleteAccountSuccess);
       signOut();
-    } catch (error) {
-      console.error("Delete account error:", error);
-      alert('Erro ao apagar a conta.');
+    } catch (err: any) {
+      alert('Error deleting account.');
     } finally {
       setIsUpdating(false);
     }
@@ -224,8 +173,7 @@ export function Settings() {
       };
 
       for (const table of tables) {
-        const query = supabase.from(table).select('*');
-        const { data } = await (table === 'profiles' ? query.eq('id', user.id) : query.eq('user_id', user.id));
+        const { data } = await supabase.from(table).select('*');
         backupData.data[table] = data || [];
       }
 
@@ -238,8 +186,8 @@ export function Settings() {
       link.click();
       document.body.removeChild(link);
       URL.revokeObjectURL(url);
-    } catch (error) {
-      console.error("Export error:", error);
+    } catch (err) {
+      console.error(err);
       alert('Error exporting data.');
     } finally {
       setIsUpdating(false);
@@ -268,14 +216,15 @@ export function Settings() {
       for (const table of tables) {
         const rows = backup.data[table];
         if (Array.isArray(rows) && rows.length > 0) {
+          // Simulation upsert
           await supabase.from(table).upsert(rows);
         }
       }
 
       alert(t.importSuccess);
       window.location.reload();
-    } catch (error) {
-      console.error("Import error:", error);
+    } catch (err) {
+      console.error(err);
       alert(t.importError);
     } finally {
       setIsUpdating(false);
@@ -311,30 +260,12 @@ export function Settings() {
     }
   ];
 
-  // 🔥 Filtra os planos baseando-se no termo de pesquisa
-  const filteredPlans = useMemo(() => {
-    if (!search) return plans;
-    const lowerSearch = search.toLowerCase();
-    return plans.filter(plan => 
-      plan.name.toLowerCase().includes(lowerSearch) || 
-      plan.description.toLowerCase().includes(lowerSearch) ||
-      plan.features.some(f => f.toLowerCase().includes(lowerSearch))
-    );
-  }, [search]);
-
   return (
     <div className="flex min-h-screen bg-[#f8fafc]">
       <Sidebar isOpen={isSidebarOpen} onClose={() => setIsSidebarOpen(false)} />
 
       <main className="flex-1 lg:ml-72 min-h-screen pb-20 transition-all duration-300">
-        {/* 🔥 Header agora recebe as props da pesquisa global */}
-        <Header 
-          title={t.settings} 
-          onMenuClick={() => setIsSidebarOpen(true)}
-          searchValue={search}
-          onSearchChange={setSearch}
-          searchPlaceholder={t.search} 
-        />
+        <Header title={t.settings} onMenuClick={() => setIsSidebarOpen(true)} />
 
         <div className="px-4 md:px-6 lg:px-8 py-8 max-w-6xl mx-auto space-y-8">
           <div className="flex flex-wrap gap-2 p-1.5 bg-white border border-slate-200 rounded-2xl w-fit">
@@ -389,28 +320,19 @@ export function Settings() {
                 exit={{ opacity: 0, scale: 0.98 }}
                 className="grid grid-cols-1 lg:grid-cols-3 gap-8"
               >
+                {/* Personal Info & Docs */}
                 <div className="lg:col-span-2 space-y-6">
                   <div className="bg-white border border-slate-200 rounded-[2.5rem] p-8 lg:p-12 shadow-sm space-y-10">
                     <div className="flex flex-col sm:flex-row sm:items-center gap-6 pb-2 border-b border-slate-50">
-                      <input type="file" ref={fileInputRef} onChange={handleAvatarUpload} accept="image/*" className="hidden" />
                       <div className="relative group">
                         <div className="size-24 rounded-[2rem] bg-emerald-50 flex items-center justify-center text-emerald-600 overflow-hidden border-4 border-slate-50">
                           {profile?.avatar_url ? (
-                            <img src={profile.avatar_url} className="size-full object-cover" referrerPolicy="no-referrer" alt="Avatar" />
+                            <img src={profile.avatar_url} className="size-full object-cover" referrerPolicy="no-referrer" />
                           ) : (
                             <Camera className="size-10 opacity-20" />
                           )}
-                          {isUploadingAvatar && (
-                            <div className="absolute inset-0 bg-white/70 flex items-center justify-center backdrop-blur-sm">
-                               <div className="size-6 border-2 border-emerald-500/30 border-t-emerald-500 rounded-full animate-spin" />
-                            </div>
-                          )}
                         </div>
-                        <button 
-                          onClick={() => fileInputRef.current?.click()}
-                          disabled={isUploadingAvatar}
-                          className="absolute -bottom-2 -right-2 p-2.5 bg-white shadow-lg border border-slate-100 rounded-xl text-slate-400 hover:text-emerald-500 transition-all disabled:opacity-50"
-                        >
+                        <button className="absolute -bottom-2 -right-2 p-2.5 bg-white shadow-lg border border-slate-100 rounded-xl text-slate-400 hover:text-emerald-500 transition-all">
                           <Camera className="size-4" />
                         </button>
                       </div>
@@ -492,6 +414,7 @@ export function Settings() {
                   </div>
                 </div>
 
+                {/* Account Status Sidebar */}
                 <div className="space-y-6">
                   <div className="bg-emerald-600 rounded-[2.5rem] p-8 text-white space-y-6 shadow-xl shadow-emerald-100">
                     <div className="space-y-1">
@@ -596,6 +519,7 @@ export function Settings() {
                     <p className="text-sm font-medium text-slate-500">Manage your data and account privacy settings.</p>
                   </div>
 
+                  {/* Backup & Restore */}
                   <div className="p-8 bg-emerald-50/30 rounded-[2rem] border border-emerald-100/50 space-y-6">
                     <div className="flex items-center gap-3">
                       <div className="p-3 bg-emerald-100 text-emerald-600 rounded-2xl">
@@ -699,7 +623,6 @@ export function Settings() {
                 </div>
               </motion.div>
             )}
-
             {activeTab === 'billing' && (
               <motion.div
                 key="billing"
@@ -714,8 +637,9 @@ export function Settings() {
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6 lg:gap-8">
-                  {filteredPlans.map((plan) => {
+                  {plans.map((plan) => {
                     const isCurrent = (profile?.plan_type || 'free') === plan.id;
+                    
                     return (
                       <div 
                         key={plan.name}
@@ -776,6 +700,7 @@ export function Settings() {
                   })}
                 </div>
 
+                {/* Additional Billing Info */}
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 pt-8 border-t border-slate-200">
                   <div className="space-y-6">
                     <h4 className="text-lg font-black text-slate-900 flex items-center gap-2">
@@ -822,6 +747,13 @@ export function Settings() {
                             <td className="px-6 py-4 text-sm font-bold text-slate-700">R$ {profile?.plan_type === 'pro' ? '49,90' : profile?.plan_type === 'enterprise' ? '199,00' : '0,00'}</td>
                             <td className="px-6 py-4 text-right">
                               <button className="text-emerald-600 hover:text-emerald-700 font-bold text-xs uppercase tracking-widest">Baixar PDF</button>
+                            </td>
+                          </tr>
+                          <tr className="hover:bg-slate-50/50 transition-colors">
+                            <td className="px-6 py-4 text-sm font-bold text-slate-500">18 Mar, 2026</td>
+                            <td className="px-6 py-4 text-sm font-bold text-slate-500">R$ 0,00</td>
+                            <td className="px-6 py-4 text-right">
+                              <button className="text-slate-400 hover:text-slate-600 font-bold text-xs uppercase tracking-widest">Recibo</button>
                             </td>
                           </tr>
                         </tbody>

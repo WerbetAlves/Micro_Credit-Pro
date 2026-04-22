@@ -24,14 +24,7 @@ export function Login() {
       });
 
       if (error) {
-        // 🔥 Toque de Mestre: Tratamento amigável para e-mail não confirmado
-        if (error.message === 'Email not confirmed') {
-          setError('Por favor, confirme o seu e-mail antes de entrar. Verifique a sua caixa de entrada ou spam.');
-        } else if (error.message === 'Invalid login credentials') {
-          setError('E-mail ou senha incorretos.');
-        } else {
-          setError(error.message);
-        }
+        setError(error.message);
         setLoading(false);
       } else {
         navigate('/');
@@ -129,7 +122,6 @@ export function Login() {
 
           <button
             onClick={handleGoogleLogin}
-            type="button"
             className="w-full flex items-center justify-center gap-3 bg-white border-2 border-slate-100 text-slate-600 font-black py-4 rounded-2xl hover:bg-slate-50 transition-all active:scale-[0.98] uppercase tracking-[0.15em] text-xs"
           >
             <img src="https://www.google.com/favicon.ico" alt="Google" className="size-4" referrerPolicy="no-referrer" />
