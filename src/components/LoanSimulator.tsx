@@ -7,6 +7,42 @@ import { motion, AnimatePresence } from 'motion/react';
 import { generateLoanContract } from '../services/contractService';
 import { cn } from '../lib/utils';
 
+type Client = {
+  id: string;
+  full_name: string;
+};
+
+type Wallet = {
+  id: string;
+  name: string;
+  balance: number;
+};
+
+const DAY_NAMES = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'] as const;
+
+const parseLocalDate = (dateStr: string) => {
+  const [year, month, day] = dateStr.split('-').map(Number);
+  return new Date(year, month - 1, day);
+};
+
+const formatLocalDate = (date: Date) => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+const diffDaysInclusive = (startDate: string, endDate: string) => {
+  const start = parseLocalDate(startDate);
+  const end = parseLocalDate(endDate);
+  start.setHours(0, 0, 0, 0);
+  end.setHours(0, 0, 0, 0);
+
+  const diffMs = end.getTime() - start.getTime();
+  const diffDays = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
+  return Math.max(diffDays, 1);
+};
+
 export function LoanSimulator() {
   const { formatCurrency } = useLanguage();
   const { user, profile } = useAuth();
@@ -16,18 +52,18 @@ export function LoanSimulator() {
   const [duration, setDuration] = useState('12');
   const [interestType, setInterestType] = useState<'monthly' | 'annual'>('monthly');
   const [paymentFrequency, setPaymentFrequency] = useState<'monthly' | 'daily' | 'weekly' | 'biweekly'>('monthly');
+  const [paymentDays, setPaymentDays] = useState<string[]>([]);
+  const [firstInstallmentDate, setFirstInstallmentDate] = useState(new Date().toISOString().split('T')[0]);
   const [firstInstallmentDueDate, setFirstInstallmentDueDate] = useState(
     new Date(new Date().setMonth(new Date().getMonth() + 1)).toISOString().split('T')[0]
   );
-  const [paymentDays, setPaymentDays] = useState<string[]>([]);
-  const [firstInstallmentDate, setFirstInstallmentDate] = useState(new Date().toISOString().split('T')[0]);
   const [notes, setNotes] = useState('');
   const [category, setCategory] = useState('Microcrédito');
 
-  const [clients, setClients] = useState<any[]>([]);
+  const [clients, setClients] = useState<Client[]>([]);
   const [selectedClientId, setSelectedClientId] = useState('');
   const [selectedWalletId, setSelectedWalletId] = useState('');
-  const [wallets, setWallets] = useState<any[]>([]);
+  const [wallets, setWallets] = useState<Wallet[]>([]);
   const [isSaving, setIsSaving] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
 
@@ -76,72 +112,23 @@ export function LoanSimulator() {
 
   const toggleDay = (dayId: string) => {
     if (paymentFrequency === 'daily') {
-      setPaymentDays(prev =>
-        prev.includes(dayId) ? prev.filter(d => d !== dayId) : [...prev, dayId]
+      setPaymentDays((prev) =>
+        prev.includes(dayId) ? prev.filter((d) => d !== dayId) : [...prev, dayId]
       );
     } else {
       setPaymentDays([dayId]);
     }
   };
 
-  const parseLocalDate = (dateStr: string) => {
-    const [year, month, day] = dateStr.split('-').map(Number);
-    return new Date(year, month - 1, day);
-  };
-
-  const diffDaysInclusive = (startDate: string, endDate: string) => {
-    const start = parseLocalDate(startDate);
-    const end = parseLocalDate(endDate);
-    start.setHours(0, 0, 0, 0);
-    end.setHours(0, 0, 0, 0);
-
-    const diffMs = end.getTime() - start.getTime();
-    const diffDays = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
-    return Math.max(diffDays, 1);
-  };
-
-  const countMatchingDays = (startDate: string, endDate: string, allowedDays: string[]) => {
-    const start = parseLocalDate(startDate);
-    const end = parseLocalDate(endDate);
-    const dayNames = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'] as const;
-
-    let count = 0;
-    const cursor = new Date(start);
-
-    while (cursor <= end) {
-      const dayName = dayNames[cursor.getDay()];
-      if (allowedDays.includes(dayName)) {
-        count++;
-      }
-      cursor.setDate(cursor.getDate() + 1);
-    }
-
-    return Math.max(count, 1);
-  };
-
   const simulation = useMemo(() => {
     const numAmount = parseFloat(amount) || 0;
     const numRate = parseFloat(rate) || 0;
-    const numDuration = parseInt(duration) || 1;
-
+    const numDuration = Math.max(parseInt(duration) || 1, 1);
     const totalPeriodDays = diffDaysInclusive(firstInstallmentDate, firstInstallmentDueDate);
     const monthlyRate = interestType === 'monthly' ? numRate / 100 : (numRate / 12) / 100;
-    const equivalentMonths = totalPeriodDays / 30;
 
-    let installmentCount = numDuration;
-
-    if (paymentFrequency === 'monthly') {
-      installmentCount = numDuration;
-    } else if (paymentFrequency === 'daily') {
-      installmentCount = paymentDays.length > 0
-        ? countMatchingDays(firstInstallmentDate, firstInstallmentDueDate, paymentDays)
-        : totalPeriodDays;
-    } else if (paymentFrequency === 'weekly') {
-      installmentCount = Math.max(numDuration, 1);
-    } else if (paymentFrequency === 'biweekly') {
-      installmentCount = Math.max(numDuration, 1);
-    }
-
+    const equivalentMonths = paymentFrequency === 'monthly' ? numDuration : totalPeriodDays / 30;
+    const installmentCount = numDuration;
     const totalInterest = numAmount * monthlyRate * equivalentMonths;
     const totalAmount = numAmount + totalInterest;
     const installmentValue = installmentCount > 0 ? totalAmount / installmentCount : totalAmount;
@@ -152,21 +139,12 @@ export function LoanSimulator() {
       numDuration,
       totalPeriodDays,
       equivalentMonths,
+      installmentCount,
       totalInterest,
       totalAmount,
       installmentValue,
-      installmentCount,
     };
-  }, [
-    amount,
-    rate,
-    duration,
-    interestType,
-    paymentFrequency,
-    firstInstallmentDate,
-    firstInstallmentDueDate,
-    paymentDays,
-  ]);
+  }, [amount, rate, duration, interestType, paymentFrequency, firstInstallmentDate, firstInstallmentDueDate]);
 
   const {
     numAmount,
@@ -174,10 +152,10 @@ export function LoanSimulator() {
     numDuration,
     totalPeriodDays,
     equivalentMonths,
+    installmentCount,
     totalInterest,
     totalAmount,
     installmentValue,
-    installmentCount,
   } = simulation;
 
   const handleSaveLoan = async () => {
@@ -202,14 +180,14 @@ export function LoanSimulator() {
           principal_amount: numAmount,
           interest_rate: numRate,
           interest_type: interestType,
-          term_months: Math.max(1, Math.ceil(equivalentMonths)),
+          term_months: paymentFrequency === 'monthly' ? numDuration : Math.max(1, Math.ceil(equivalentMonths)),
           monthly_installment: installmentValue,
           total_repayment: totalAmount,
           payment_frequency: paymentFrequency,
           category,
           guarantee_info: hasGuarantee
             ? { type: guaranteeType, description: guaranteeDescription }
-            : null
+            : null,
         },
         client,
         profile
@@ -217,93 +195,115 @@ export function LoanSimulator() {
 
       const { data: loan, error: loanError } = await supabase
         .from('loans')
-        .insert([{
-          user_id: user.id,
-          client_id: selectedClientId,
-          principal_amount: numAmount,
-          interest_rate: numRate,
-          interest_type: interestType,
-          payment_frequency: paymentFrequency,
-          payment_days: paymentDays,
-          first_installment_date: firstInstallmentDate,
-          due_date: firstInstallmentDueDate,
-          category,
-          notes,
-          term_months: paymentFrequency === 'monthly' ? numDuration : Math.max(1, Math.ceil(equivalentMonths)),
-          term_days: totalPeriodDays,
-          monthly_installment: installmentValue,
-          total_repayment: totalAmount,
-          status: 'active',
-          guarantee_info: hasGuarantee
-            ? {
-                type: guaranteeType,
-                description: guaranteeDescription
-              }
-            : null,
-          legal_validation_status: 'not_validated',
-          sent_to_client: true,
-          contract_content: contractContent
-        }])
+        .insert([
+          {
+            user_id: user.id,
+            client_id: selectedClientId,
+            principal_amount: numAmount,
+            interest_rate: numRate,
+            interest_type: interestType,
+            payment_frequency: paymentFrequency,
+            payment_days: paymentDays,
+            first_installment_date: firstInstallmentDate,
+            due_date: firstInstallmentDueDate,
+            category,
+            notes,
+            term_months: paymentFrequency === 'monthly' ? numDuration : Math.max(1, Math.ceil(equivalentMonths)),
+            term_days: paymentFrequency === 'monthly' ? numDuration * 30 : totalPeriodDays,
+            monthly_installment: installmentValue,
+            total_repayment: totalAmount,
+            status: 'active',
+            guarantee_info: hasGuarantee
+              ? {
+                  type: guaranteeType,
+                  description: guaranteeDescription,
+                }
+              : null,
+            legal_validation_status: 'not_validated',
+            sent_to_client: true,
+            contract_content: contractContent,
+          },
+        ])
         .select()
         .single();
 
       if (loanError) throw loanError;
 
       const installments = [];
-      let currentDate = parseLocalDate(firstInstallmentDate);
-      let created = 0;
-      const dayNames = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'] as const;
 
       if (paymentFrequency === 'monthly') {
-        currentDate = parseLocalDate(firstInstallmentDueDate);
-        while (created < installmentCount) {
+        let currentDate = parseLocalDate(firstInstallmentDueDate);
+
+        for (let i = 0; i < installmentCount; i++) {
           installments.push({
             loan_id: loan.id,
             amount: installmentValue,
-            due_date: currentDate.toISOString().split('T')[0],
-            status: 'upcoming'
+            due_date: formatLocalDate(currentDate),
+            status: 'upcoming',
           });
-          created++;
           currentDate.setMonth(currentDate.getMonth() + 1);
         }
       } else if (paymentFrequency === 'daily') {
         const endDate = parseLocalDate(firstInstallmentDueDate);
-        while (currentDate <= endDate && created < installmentCount) {
-          const dayName = dayNames[currentDate.getDay()];
+        let currentDate = parseLocalDate(firstInstallmentDate);
+        let created = 0;
+
+        while (created < installmentCount) {
+          const dayName = DAY_NAMES[currentDate.getDay()];
           const canCharge = paymentDays.length === 0 || paymentDays.includes(dayName);
 
           if (canCharge) {
             installments.push({
               loan_id: loan.id,
               amount: installmentValue,
-              due_date: currentDate.toISOString().split('T')[0],
-              status: 'upcoming'
+              due_date: formatLocalDate(currentDate),
+              status: 'upcoming',
             });
             created++;
           }
 
           currentDate.setDate(currentDate.getDate() + 1);
+
+          if (currentDate > endDate && created < installmentCount) {
+            continue;
+          }
         }
       } else if (paymentFrequency === 'weekly') {
-        currentDate = parseLocalDate(firstInstallmentDueDate);
+        let currentDate = parseLocalDate(firstInstallmentDueDate);
+        let created = 0;
+
         while (created < installmentCount) {
+          if (paymentDays.length > 0) {
+            while (DAY_NAMES[currentDate.getDay()] !== paymentDays[0]) {
+              currentDate.setDate(currentDate.getDate() + 1);
+            }
+          }
+
           installments.push({
             loan_id: loan.id,
             amount: installmentValue,
-            due_date: currentDate.toISOString().split('T')[0],
-            status: 'upcoming'
+            due_date: formatLocalDate(currentDate),
+            status: 'upcoming',
           });
           created++;
           currentDate.setDate(currentDate.getDate() + 7);
         }
-      } else if (paymentFrequency === 'biweekly') {
-        currentDate = parseLocalDate(firstInstallmentDueDate);
+      } else {
+        let currentDate = parseLocalDate(firstInstallmentDueDate);
+        let created = 0;
+
         while (created < installmentCount) {
+          if (paymentDays.length > 0) {
+            while (DAY_NAMES[currentDate.getDay()] !== paymentDays[0]) {
+              currentDate.setDate(currentDate.getDate() + 1);
+            }
+          }
+
           installments.push({
             loan_id: loan.id,
             amount: installmentValue,
-            due_date: currentDate.toISOString().split('T')[0],
-            status: 'upcoming'
+            due_date: formatLocalDate(currentDate),
+            status: 'upcoming',
           });
           created++;
           currentDate.setDate(currentDate.getDate() + 14);
@@ -313,25 +313,27 @@ export function LoanSimulator() {
       const { error: instError } = await supabase.from('installments').insert(installments);
       if (instError) throw instError;
 
-      await supabase.from('transactions').insert([{
-        user_id: user.id,
-        client_id: selectedClientId,
-        loan_id: loan.id,
-        wallet_id: selectedWalletId || null,
-        type: 'expense',
-        category: 'loan_disbursement',
-        amount: numAmount,
-        description: `Empréstimo Liberado: ${client.full_name}`
-      }]);
+      await supabase.from('transactions').insert([
+        {
+          user_id: user.id,
+          client_id: selectedClientId,
+          loan_id: loan.id,
+          wallet_id: selectedWalletId || null,
+          type: 'expense',
+          category: 'loan_disbursement',
+          amount: numAmount,
+          description: `Empréstimo Liberado: ${client.full_name}`,
+        },
+      ]);
 
-      const currentWallet = wallets.find(w => w.id === selectedWalletId);
+      const currentWallet = wallets.find((w) => w.id === selectedWalletId);
       if (currentWallet) {
         const newBalance = currentWallet.balance - numAmount;
         await supabase.from('wallets').update({ balance: newBalance }).eq('id', selectedWalletId);
 
-        setWallets(prev => prev.map(w => (
-          w.id === selectedWalletId ? { ...w, balance: newBalance } : w
-        )));
+        setWallets((prev) =>
+          prev.map((w) => (w.id === selectedWalletId ? { ...w, balance: newBalance } : w))
+        );
       }
 
       setShowSuccess(true);
@@ -589,8 +591,10 @@ export function LoanSimulator() {
                 className="w-full bg-slate-800/50 border border-slate-700 rounded-2xl pl-10 pr-6 py-3 text-sm font-bold focus:ring-2 focus:ring-emerald-500 outline-none appearance-none text-white"
               >
                 <option value="">Selecione um cliente...</option>
-                {clients.map(c => (
-                  <option key={c.id} value={c.id}>{c.full_name}</option>
+                {clients.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.full_name}
+                  </option>
                 ))}
               </select>
             </div>
@@ -606,8 +610,10 @@ export function LoanSimulator() {
                 className="w-full bg-slate-800/50 border border-slate-700 rounded-2xl pl-10 pr-6 py-3 text-sm font-bold focus:ring-2 focus:ring-emerald-500 outline-none appearance-none text-white"
               >
                 <option value="">Selecione uma carteira...</option>
-                {wallets.map(w => (
-                  <option key={w.id} value={w.id}>{w.name}</option>
+                {wallets.map((w) => (
+                  <option key={w.id} value={w.id}>
+                    {w.name}
+                  </option>
                 ))}
               </select>
             </div>
@@ -621,7 +627,9 @@ export function LoanSimulator() {
             disabled={isSaving || !selectedClientId}
             className="w-full bg-emerald-500 text-slate-900 rounded-2xl py-4 font-black text-xs uppercase tracking-widest hover:bg-emerald-400 transition-all active:scale-95 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-emerald-500/20"
           >
-            {isSaving ? 'Processando...' : (
+            {isSaving ? (
+              'Processando...'
+            ) : (
               <>
                 <CheckCircle2 className="size-4" />
                 Efetivar Empréstimo
