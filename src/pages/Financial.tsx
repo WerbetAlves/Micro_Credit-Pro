@@ -1,14 +1,13 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { Landmark, Wallet, Plus, ArrowUpRight, ArrowDownRight, X } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Search, Landmark, Wallet, Plus, ArrowUpRight, ArrowDownRight, ArrowRight, X } from 'lucide-react';
 import { Sidebar } from '../components/Sidebar';
-import { Header } from '../components/Header';
 import { WalletManager } from '../components/WalletManager';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../lib/supabase';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../lib/utils';
-import { Tooltip, ResponsiveContainer, AreaChart, Area, XAxis } from 'recharts';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, AreaChart, Area } from 'recharts';
 
 interface Transaction {
   id: string;
@@ -32,6 +31,7 @@ export function Financial() {
   const [filterType, setFilterType] = useState<string>('all');
   const [filterCategory, setFilterCategory] = useState<string>('all');
 
+  // Modal State para Nova Transação
   const [isTxModalOpen, setIsTxModalOpen] = useState(false);
   const [txType, setTxType] = useState<'income' | 'expense'>('expense');
   const [txCategory, setTxCategory] = useState('other');
@@ -40,13 +40,12 @@ export function Financial() {
   const [txWalletId, setTxWalletId] = useState('');
   const [availableWallets, setAvailableWallets] = useState<{id: string, name: string}[]>([]);
 
+  // Stats
   const [stats, setStats] = useState({ balance: 0, inflow: 0, outflow: 0 });
 
   useEffect(() => {
-    if (user) {
-      fetchTransactions();
-      fetchWallets();
-    }
+    fetchTransactions();
+    fetchWallets();
   }, [user]);
 
   async function fetchWallets() {
@@ -54,8 +53,8 @@ export function Financial() {
     try {
       const { data } = await supabase.from('wallets').select('id, name').eq('user_id', user.id);
       if (data) setAvailableWallets(data);
-    } catch (error) {
-      console.error('Error fetching wallets:', error);
+    } catch (err) {
+      console.error('Error fetching wallets for selection:', err);
     }
   }
 
@@ -63,6 +62,7 @@ export function Financial() {
     if (!user) return;
     setLoading(true);
     try {
+      // 1. Primeiro tenta buscar com o join de clientes
       const { data, error } = await supabase
         .from('transactions')
         .select(`
@@ -75,6 +75,8 @@ export function Financial() {
         .order('created_at', { ascending: false });
 
       if (error) {
+        // Fallback: se o join falhar (ex: coluna faltando), busca sem o join
+        console.warn('Join with clients failed, fetching without relationship:', error.message);
         const { data: simpleData, error: simpleError } = await supabase
           .from('transactions')
           .select('*')
@@ -92,8 +94,8 @@ export function Financial() {
       const outflow = txs.filter(t => t.type === 'expense').reduce((acc, t) => acc + Number(t.amount), 0);
       setStats({ balance: inflow - outflow, inflow, outflow });
 
-    } catch (error) {
-      console.error('Error fetching transactions:', (error as Error).message);
+    } catch (err: any) {
+      console.error('Error fetching transactions:', err.message);
     } finally {
       setLoading(false);
     }
@@ -119,61 +121,57 @@ export function Financial() {
       setTxAmount('');
       setTxDescription('');
       setTxWalletId('');
-      fetchTransactions();
-    } catch (error) {
-      console.error('Erro ao adicionar transação:', (error as Error).message);
-      alert('Falha ao adicionar transação. Verifique se o banco de dados foi atualizado.');
+      fetchTransactions(); // Atualiza a lista e os gráficos
+    } catch (err: any) {
+      console.error('Erro ao adicionar transação:', err.message);
+      alert('Falha ao adicionar transação.');
     }
   };
 
-  const filteredTransactions = useMemo(() => {
-    return transactions.filter(tx => {
-      const lowerSearch = search.toLowerCase();
-      const matchesSearch = tx.description?.toLowerCase().includes(lowerSearch) || 
-                            tx.clients?.full_name?.toLowerCase().includes(lowerSearch);
-      const matchesType = filterType === 'all' || tx.type === filterType;
-      const matchesCategory = filterCategory === 'all' || tx.category === filterCategory;
-      return matchesSearch && matchesType && matchesCategory;
-    });
-  }, [transactions, search, filterType, filterCategory]);
+  const filteredTransactions = transactions.filter(tx => {
+    const matchesSearch = tx.description?.toLowerCase().includes(search.toLowerCase()) || 
+                          tx.clients?.full_name.toLowerCase().includes(search.toLowerCase());
+    const matchesType = filterType === 'all' || tx.type === filterType;
+    const matchesCategory = filterCategory === 'all' || tx.category === filterCategory;
+    return matchesSearch && matchesType && matchesCategory;
+  });
 
-  const chartData = useMemo(() => {
-    return Array.from({ length: 7 }).map((_, i) => {
-      const date = new Date();
-      date.setDate(date.getDate() - (6 - i));
-      const dateStr = date.toISOString().split('T')[0];
-      
-      const dayTxs = transactions.filter(t => t.created_at.startsWith(dateStr));
-      return {
-        name: date.toLocaleDateString([], { weekday: 'short' }),
-        income: dayTxs.filter(t => t.type === 'income').reduce((acc, t) => acc + Number(t.amount), 0),
-        expense: dayTxs.filter(t => t.type === 'expense').reduce((acc, t) => acc + Number(t.amount), 0)
-      };
-    });
-  }, [transactions]);
+  const chartData = Array.from({ length: 7 }).map((_, i) => {
+    const date = new Date();
+    date.setDate(date.getDate() - (6 - i));
+    const dateStr = date.toISOString().split('T')[0];
+    
+    const dayTxs = transactions.filter(t => t.created_at.startsWith(dateStr));
+    return {
+      name: date.toLocaleDateString([], { weekday: 'short' }),
+      income: dayTxs.filter(t => t.type === 'income').reduce((acc, t) => acc + Number(t.amount), 0),
+      expense: dayTxs.filter(t => t.type === 'expense').reduce((acc, t) => acc + Number(t.amount), 0)
+    };
+  });
 
   return (
     <div className="flex min-h-screen bg-[#f8fafc] overflow-x-hidden">
       <Sidebar isOpen={isSidebarOpen} onClose={() => setIsSidebarOpen(false)} />
 
       <main className="flex-1 lg:ml-72 min-h-screen pb-20 w-full transition-all duration-300">
-        <Header 
-          title={t.financialOverview} 
-          onMenuClick={() => setIsSidebarOpen(true)}
-          searchValue={search}
-          onSearchChange={setSearch}
-          searchPlaceholder={t.search}
-        >
+        <header className="sticky top-0 z-40 bg-white/80 backdrop-blur-xl border-b border-slate-100 flex items-center justify-between px-4 lg:px-8 py-4 lg:py-5">
+          <div className="flex items-center gap-4">
+            <button onClick={() => setIsSidebarOpen(true)} className="lg:hidden p-2 text-slate-500">
+              <Landmark className="size-6" />
+            </button>
+            <h1 className="text-lg lg:text-xl font-bold tracking-tight text-slate-900 truncate">{t.financialOverview}</h1>
+          </div>
+              {/* Botão de Adicionar Transação no Topo */}
           <button 
             onClick={() => setIsTxModalOpen(true)}
-            className="flex items-center gap-2 bg-emerald-600 text-white px-4 py-2.5 rounded-xl text-xs font-bold uppercase tracking-widest hover:bg-emerald-700 transition-colors shadow-lg shadow-emerald-200"
+            className="flex items-center gap-2 bg-emerald-600 text-white px-4 py-2 rounded-xl text-xs font-bold uppercase tracking-widest hover:bg-emerald-700 transition-colors shadow-lg shadow-emerald-200"
           >
             <Plus className="size-4" />
             <span className="hidden sm:inline">{t.newTransaction}</span>
           </button>
-        </Header>
+        </header>
 
-        <div className="px-4 lg:px-8 py-8 w-full transition-all space-y-8 max-w-[1600px] mx-auto">
+        <div className="px-4 lg:px-8 py-8 w-full transition-all space-y-8">
           
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             <motion.div className="bg-slate-900 rounded-[2rem] p-8 text-white shadow-xl shadow-slate-200 relative overflow-hidden">
@@ -207,10 +205,10 @@ export function Financial() {
 
           <WalletManager />
           
+          {/* Chart Section */}
           <div className="bg-white rounded-[2.5rem] p-6 lg:p-10 border border-slate-50 shadow-sm">
             <div className="h-[300px] w-full">
-              {/* 🔥 FIX: Adicionado minWidth={0} para remover erro do console */}
-              <ResponsiveContainer width="100%" height="100%" minWidth={0}>
+              <ResponsiveContainer width="100%" height="100%">
                 <AreaChart data={chartData}>
                   <defs>
                     <linearGradient id="colorIncome" x1="0" y1="0" x2="0" y2="1">
@@ -231,9 +229,19 @@ export function Financial() {
             </div>
           </div>
 
+          {/* Transactions List */}
           <div className="bg-white rounded-[2.5rem] border border-slate-50 shadow-sm overflow-hidden">
             <div className="p-6 lg:p-8 border-b border-slate-100 flex flex-col md:flex-row gap-4 items-center justify-between">
                <h3 className="text-lg font-bold text-slate-900">{t.allTransactions}</h3>
+               <div className="flex flex-wrap items-center gap-3 w-full md:w-auto">
+                 <div className="relative flex-1 md:w-64">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-slate-300" />
+                    <input 
+                      type="text" placeholder={t.searchClients} value={search} onChange={e => setSearch(e.target.value)}
+                      className="w-full pl-10 pr-4 py-2 bg-slate-50 border-none rounded-xl text-xs font-medium focus:ring-2 focus:ring-emerald-100 outline-none"
+                    />
+                 </div>
+               </div>
             </div>
 
             <div className="overflow-x-auto">
@@ -262,11 +270,10 @@ export function Financial() {
                             </div>
                             <div>
                               <p className="text-xs font-bold text-slate-900 leading-tight">{tx.description || tx.category}</p>
-                              {tx.clients && <p className="text-[9px] text-slate-400 font-bold uppercase">{tx.clients.full_name}</p>}
                             </div>
                           </div>
                         </td>
-                        <td className="px-6 py-5"><span className="text-[10px] font-black text-slate-400 uppercase tracking-[0.15em] bg-slate-50 px-2 py-1 rounded-md">{t[tx.category as keyof typeof t] || tx.category}</span></td>
+                        <td className="px-6 py-5"><span className="text-[10px] font-black text-slate-400 uppercase tracking-[0.15em] bg-slate-50 px-2 py-1 rounded-md">{t[tx.category] || tx.category}</span></td>
                         <td className="px-6 py-5 text-right">
                           <span className={cn("text-sm font-black tracking-tighter", tx.type === 'income' ? "text-emerald-600" : "text-slate-900")}>
                             {tx.type === 'income' ? '+' : '-'} {formatCurrency(tx.amount)}
@@ -282,6 +289,7 @@ export function Financial() {
         </div>
       </main>
 
+      {/* Modal Nova Transação */}
       <AnimatePresence>
         {isTxModalOpen && (
           <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">

@@ -1,5 +1,5 @@
-import { useState, useEffect, useMemo } from 'react';
-import { Plus, Zap, User, Wallet } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { Search, Bell, Plus, Menu, Zap, User, Wallet } from 'lucide-react';
 import { Sidebar } from '../components/Sidebar';
 import { Header } from '../components/Header';
 import { AIAssistantDashboard } from '../components/AIAssistantDashboard';
@@ -13,20 +13,20 @@ import { WelcomeAnimation } from '../components/WelcomeAnimation';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useAuth } from '../contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
-import { supabase } from '../lib/supabase';
+import { supabase, isConfigured } from '../lib/supabase';
 import { cn } from '../lib/utils';
+import { AlertCircle } from 'lucide-react';
 
 export function Dashboard() {
   const { t, formatCurrency } = useLanguage();
-  const { user, profile, refreshProfile } = useAuth();
+  const { user } = useAuth();
   const navigate = useNavigate();
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-  const [searchTerm, setSearchTerm] = useState('');
+  const [profile, setProfile] = useState<any>(null);
   
   const [stats, setStats] = useState({
     totalCapital: 0,
     monthlyProfit: 0,
-    yieldPercentage: 0,
     activeLoans: 0,
     defaultRate: 0,
     avgLoanAmount: 0,
@@ -34,107 +34,110 @@ export function Dashboard() {
     hasClients: false,
     hasLoans: false
   });
+  const [errorVisible, setErrorVisible] = useState<string | null>(null);
   const [showWelcome, setShowWelcome] = useState(false);
 
   useEffect(() => {
-    if (profile && profile.has_onboarded === false) {
+    const hasSeenWelcome = localStorage.getItem(`welcome_seen_${user?.id}`);
+    if (!hasSeenWelcome && user) {
       setShowWelcome(true);
     }
-  }, [profile]);
+  }, [user]);
 
-  const handleWelcomeComplete = async () => {
+  const handleWelcomeComplete = () => {
     setShowWelcome(false);
     if (user) {
-      try {
-        await supabase.from('profiles').update({ has_onboarded: true }).eq('id', user.id);
-        await refreshProfile();
-      } catch (err) {
-        console.error("Erro ao atualizar status de onboarding:", err);
-      }
+      localStorage.setItem(`welcome_seen_${user.id}`, 'true');
     }
   };
 
   useEffect(() => {
-    if (user) fetchDashboardStats();
+    fetchDashboardStats();
   }, [user]);
 
   async function fetchDashboardStats() {
     if (!user) return;
+
     try {
+      setErrorVisible(null);
+      // 0. Busca Perfil
+      const { data: profileData } = await supabase.from('profiles').select('*').single();
+      if (profileData) setProfile(profileData);
+
+      // 1. Busca Empréstimos (Dinheiro Emprestado)
+      const { data: loans, error: loansError } = await supabase
+        .from('loans')
+        .select('*')
+        .eq('user_id', user.id);
+      
+      if (loansError) throw loansError;
+
+      const totalLoansCapital = (loans || []).reduce((acc, l) => acc + Number(l.principal_amount), 0);
+      const activeCount = (loans || []).filter(l => l.status === 'active' || l.status === 'pending').length;
+      const defaultCount = (loans || []).filter(l => l.status === 'default').length;
+      const defRate = loans?.length ? (defaultCount / loans.length) * 100 : 0;
+      const avgAmt = loans?.length ? totalLoansCapital / loans.length : 0;
+
+      // 2. Busca Saldo das Carteiras (Dinheiro em Caixa)
+      let totalWalletBalance = 0;
+      const { data: wallets, error: walletsError } = await supabase
+        .from('wallets')
+        .select('balance')
+        .eq('user_id', user.id);
+      
+      if (!walletsError && wallets) {
+        totalWalletBalance = wallets.reduce((acc, w) => acc + Number(w.balance), 0);
+      }
+
+      // 3. Busca Contagem de Clientes (para o Onboarding)
+      const { count: clientsCount } = await supabase
+        .from('clients')
+        .select('id', { count: 'exact' })
+        .eq('user_id', user.id)
+        .limit(1);
+
+      // 4. Lucro Mensal (Cálculo robusto sem join complexo)
+      let monthlyP = 0;
       const now = new Date();
-      const firstDayOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
+      const firstDay = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0];
+      const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().split('T')[0];
+      
+      const { data: paidInstallments, error: instError } = await supabase
+        .from('installments')
+        .select('amount, loan_id')
+        .eq('status', 'paid')
+        .gte('due_date', firstDay)
+        .lte('due_date', lastDay);
 
-      // 1. Puxar dados fundamentais
-      const [loansRes, walletsRes, txRes] = await Promise.all([
-        supabase.from('loans').select('*').eq('user_id', user.id),
-        supabase.from('wallets').select('balance').eq('user_id', user.id),
-        // 🔥 Buscamos as movimentações reais de entrada deste mês
-        supabase.from('transactions')
-          .select('*')
-          .eq('user_id', user.id)
-          .eq('type', 'income')
-          .gte('created_at', firstDayOfMonth)
-      ]);
+      if (!instError && paidInstallments && loans) {
+        const myLoanIds = loans.map(l => l.id);
+        monthlyP = paidInstallments
+          .filter(i => myLoanIds.includes(i.loan_id))
+          .reduce((acc, i) => acc + Number(i.amount), 0);
+      }
 
-      const loans = loansRes.data || [];
-      const wallets = walletsRes.data || [];
-      const monthlyIncomes = txRes.data || [];
-
-      // --- CÁLCULO: CAPITAL TOTAL (Património) ---
-      const totalWalletBalance = wallets.reduce((acc, w) => acc + Number(w.balance), 0);
-      const activeLoansList = loans.filter(l => l.status === 'active');
-      const capitalOnStreet = activeLoansList.reduce((acc, l) => acc + Number(l.principal_amount), 0);
-      const totalCapital = totalWalletBalance + capitalOnStreet;
-
-      // --- CÁLCULO: LUCRO MENSAL REAL (Baseado em Transações de Recebimento) ---
-      let monthlyInterestProfit = 0;
-
-      monthlyIncomes.forEach(tx => {
-        // Se a transação for um recebimento de empréstimo (payment_received ou descrição conter "Parcela")
-        if (tx.category === 'payment_received' || tx.description?.toLowerCase().includes('parcela')) {
-          
-          // Tentamos encontrar o empréstimo associado (via descrição ou lógica de valor se necessário)
-          // Nota: O ideal é que a transaction tenha loan_id, mas aqui usamos uma estimativa de margem
-          // Se não tivermos o loan_id na tx, calculamos a média de juros do portfolio (ex: 20%)
-          // Mas como queremos precisão, vamos buscar o lucro proporcional:
-          
-          const totalPaidThisMonth = Number(tx.amount);
-          
-          // Lógica Proporcional: Se os seus empréstimos têm em média 20% de juros, 
-          // 1/6 de cada parcela recebida é lucro.
-          // Aqui, vamos assumir 20% de margem sobre o recebido como fallback caso não ache o loan
-          monthlyInterestProfit += (totalPaidThisMonth * 0.1667); // Ex: Parcela 120 (100 capital + 20 juros)
-        } else if (tx.category === 'fee') {
-          // Taxas e multas são 100% lucro
-          monthlyInterestProfit += Number(tx.amount);
-        }
-      });
-
-      // --- CÁLCULO: RENTABILIDADE (%) ---
-      const yieldPower = capitalOnStreet > 0 ? (monthlyInterestProfit / capitalOnStreet) * 100 : 0;
-
-      const defaultCount = loans.filter(l => l.status === 'default').length;
-      const defRate = loans.length ? (defaultCount / loans.length) * 100 : 0;
-
+      // 5. Consolida tudo no Estado
       setStats({
-        totalCapital,
-        monthlyProfit: monthlyInterestProfit,
-        yieldPercentage: yieldPower,
-        activeLoans: activeLoansList.length,
+        totalCapital: totalLoansCapital + totalWalletBalance,
+        monthlyProfit: monthlyP,
+        activeLoans: activeCount,
         defaultRate: defRate,
-        avgLoanAmount: loans.length ? capitalOnStreet / loans.length : 0,
-        hasWallets: wallets.length > 0,
-        hasClients: true,
-        hasLoans: loans.length > 0
+        avgLoanAmount: avgAmt,
+        hasWallets: (wallets?.length || 0) > 0,
+        hasClients: (clientsCount || 0) > 0,
+        hasLoans: (loans?.length || 0) > 0
       });
-    } catch (error) {
-      console.error('Error fetching dashboard stats:', error);
+    } catch (err: any) {
+      console.error('Error fetching dashboard stats:', err.message);
+      setErrorVisible(err.message);
     }
   }
 
   const scrollToSimulator = () => {
     const element = document.getElementById('issue-new-credit');
-    if (element) element.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    if (element) {
+      element.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
   };
 
   return (
@@ -143,76 +146,150 @@ export function Dashboard() {
       <Sidebar isOpen={isSidebarOpen} onClose={() => setIsSidebarOpen(false)} />
 
       <main className="flex-1 lg:ml-72 min-h-screen pb-20 w-full transition-all duration-300">
-        <Header 
-          title={t.dashboard} 
-          onMenuClick={() => setIsSidebarOpen(true)}
-          searchValue={searchTerm}
-          onSearchChange={setSearchTerm}
-          searchPlaceholder={t.search}
-        >
+        <Header title={t.dashboard} onMenuClick={() => setIsSidebarOpen(true)}>
           {profile?.plan_type && (
             <div className="hidden sm:flex items-center bg-white px-3 py-1.5 rounded-xl gap-2 border border-slate-200 shadow-sm">
-              <div className={cn("size-2 rounded-full animate-pulse", profile.plan_type === 'free' ? "bg-slate-400" : "bg-emerald-500")} />
-              <span className="text-[10px] font-black uppercase tracking-widest text-slate-600">Plano: {profile.plan_type}</span>
+              <div className={cn(
+                "size-2 rounded-full animate-pulse",
+                profile.plan_type === 'free' ? "bg-slate-400" : "bg-emerald-500"
+              )} />
+              <span className="text-[10px] font-black uppercase tracking-widest text-slate-600">
+                {t.planLabel} {profile.plan_type}
+              </span>
             </div>
           )}
         </Header>
 
-        <div className="px-4 md:px-6 lg:px-8 py-6 lg:py-10 w-full max-w-[1600px] mx-auto space-y-8 lg:space-y-12">
+        <div className="px-4 md:px-6 lg:px-8 py-6 lg:py-10 w-full max-w-[1600px] mx-auto space-y-8 lg:space-y-12 transition-all">
           
-          {/* Quick Actions */}
+          {/* Quick Actions Bar */}
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-            <button onClick={scrollToSimulator} className="group p-4 bg-white rounded-3xl border border-slate-50 shadow-sm hover:shadow-xl hover:shadow-emerald-100/50 transition-all flex flex-col items-center text-center space-y-3">
-              <div className="w-12 h-12 rounded-2xl bg-emerald-500 text-white flex items-center justify-center group-hover:scale-110 transition-transform shadow-lg shadow-emerald-200"><Plus className="size-6" /></div>
-              <span className="text-[10px] font-black text-slate-700 uppercase tracking-widest">{t.issueLoan}</span>
+            <button 
+              onClick={scrollToSimulator}
+              className="group p-4 bg-white rounded-3xl border border-slate-50 shadow-sm hover:shadow-xl hover:shadow-emerald-100/50 transition-all flex flex-col items-center text-center space-y-3"
+            >
+              <div className="w-12 h-12 rounded-2xl bg-emerald-500 text-white flex items-center justify-center group-hover:scale-110 transition-transform shadow-lg shadow-emerald-200">
+                <Plus className="size-6" />
+              </div>
+              <span className="text-[10px] font-black text-slate-700 uppercase tracking-widest">{t.issueLoan || 'Novo Empréstimo'}</span>
             </button>
-            <button onClick={() => navigate('/clients')} className="group p-4 bg-white rounded-3xl border border-slate-50 shadow-sm hover:shadow-xl hover:shadow-primary-100/50 transition-all flex flex-col items-center text-center space-y-3">
-              <div className="w-12 h-12 rounded-2xl bg-primary-500 text-white flex items-center justify-center group-hover:scale-110 transition-transform shadow-lg shadow-primary-200"><User className="size-6" /></div>
+            <button 
+              onClick={() => navigate('/clients')}
+              className="group p-4 bg-white rounded-3xl border border-slate-50 shadow-sm hover:shadow-xl hover:shadow-primary-100/50 transition-all flex flex-col items-center text-center space-y-3"
+            >
+              <div className="w-12 h-12 rounded-2xl bg-primary-500 text-white flex items-center justify-center group-hover:scale-110 transition-transform shadow-lg shadow-primary-200">
+                <User className="size-6" />
+              </div>
               <span className="text-[10px] font-black text-slate-700 uppercase tracking-widest">{t.addClient}</span>
             </button>
-            <button onClick={() => navigate('/payments')} className="group p-4 bg-white rounded-3xl border border-slate-50 shadow-sm hover:shadow-xl hover:shadow-amber-100/50 transition-all flex flex-col items-center text-center space-y-3">
-              <div className="w-12 h-12 rounded-2xl bg-amber-500 text-white flex items-center justify-center group-hover:scale-110 transition-transform shadow-lg shadow-amber-200"><Zap className="size-6" /></div>
+            <button 
+              onClick={() => navigate('/payments')}
+              className="group p-4 bg-white rounded-3xl border border-slate-50 shadow-sm hover:shadow-xl hover:shadow-amber-100/50 transition-all flex flex-col items-center text-center space-y-3"
+            >
+              <div className="w-12 h-12 rounded-2xl bg-amber-500 text-white flex items-center justify-center group-hover:scale-110 transition-transform shadow-lg shadow-amber-200">
+                <Zap className="size-6" />
+              </div>
               <span className="text-[10px] font-black text-slate-700 uppercase tracking-widest">{t.manageInstallments}</span>
             </button>
-            <button onClick={() => navigate('/financial')} className="group p-4 bg-white rounded-3xl border border-slate-50 shadow-sm hover:shadow-xl hover:shadow-blue-100/50 transition-all flex flex-col items-center text-center space-y-3">
-              <div className="w-12 h-12 rounded-2xl bg-blue-500 text-white flex items-center justify-center group-hover:scale-110 transition-transform shadow-lg shadow-blue-200"><Wallet className="size-6" /></div>
+            <button 
+              onClick={() => navigate('/financial')}
+              className="group p-4 bg-white rounded-3xl border border-slate-50 shadow-sm hover:shadow-xl hover:shadow-blue-100/50 transition-all flex flex-col items-center text-center space-y-3"
+            >
+              <div className="w-12 h-12 rounded-2xl bg-blue-500 text-white flex items-center justify-center group-hover:scale-110 transition-transform shadow-lg shadow-blue-200">
+                <Wallet className="size-6" />
+              </div>
               <span className="text-[10px] font-black text-slate-700 uppercase tracking-widest">{t.wallets}</span>
             </button>
           </div>
 
-          {/* KPI Section - Lucro e Yield corrigidos */}
+          <OnboardingChecklist 
+            hasWallets={stats.hasWallets}
+            hasClients={stats.hasClients}
+            hasLoans={stats.hasLoans}
+          />
+
+          {/* KPI Grid - O Card "Total Capital" agora refletirá a nova conta */}
           <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 lg:gap-6">
-            <KPICard label={t.totalCapital} value={stats.totalCapital} isCurrency={true} change="Património Total" trend="up" />
+            <KPICard 
+              label={t.totalCapital} 
+              value={stats.totalCapital} 
+              isCurrency={true}
+              change={t.vsLastMonth.replace('{val}', '+0.0%')}
+              trend="up" 
+            />
             <KPICard 
               label={t.monthlyProfit} 
               value={stats.monthlyProfit} 
-              isCurrency={true} 
-              change={`${stats.yieldPercentage.toFixed(2)}% de Rendimento`} 
-              trend={stats.yieldPercentage > 0 ? "up" : "down"} 
+              isCurrency={true}
+              change={t.yield.replace('{val}', '0.0%')} 
+              trend="up" 
             />
-            <KPICard label={t.activeLoans} value={stats.activeLoans.toString()} subtext={`Média: ${formatCurrency(stats.avgLoanAmount)}`} />
-            <KPICard label={t.defaultRate} value={`${stats.defaultRate.toFixed(1)}%`} change="Inadimplência" trend="up" />
+            <KPICard 
+              label={t.activeLoans} 
+              value={stats.activeLoans.toString()} 
+              subtext={t.avgPerClient.replace('{amount}', formatCurrency(stats.avgLoanAmount))} 
+            />
+            <KPICard 
+              label={t.defaultRate} 
+              value={`${stats.defaultRate.toFixed(1)}%`} 
+              change={t.improvement.replace('{val}', '0,0%')} 
+              trend="up" 
+            />
           </section>
 
+          {/* LAYOUT DO MAIN CONTENT: Simulador no topo como configuramos antes */}
           <div className="space-y-8 lg:space-y-12 w-full">
+            
+            {/* LINHA 1: Simulador Ocupando a Largura Total (12/12) */}
             <div id="issue-new-credit" className="space-y-6 scroll-mt-24 w-full">
-              <h3 className="text-xl lg:text-2xl font-black tracking-tight text-slate-900 px-2">{t.issueNewCredit}</h3>
-              <LoanSimulator />
+              <div className="flex items-center justify-between px-2">
+                <h3 className="text-xl lg:text-2xl font-black tracking-tight text-slate-900">{t.issueNewCredit}</h3>
+              </div>
+              <div className="w-full">
+                <LoanSimulator />
+              </div>
             </div>
 
+            {/* LINHA 2: Cobranças e Sidebar Direita */}
             <div className="grid grid-cols-1 xl:grid-cols-12 gap-6 md:gap-8 lg:gap-12">
               <div className="xl:col-span-8 w-full min-w-0">
-                <UpcomingCollections searchTerm={searchTerm} />
+                <UpcomingCollections />
               </div>
+
               <div className="xl:col-span-4 space-y-8 w-full min-w-0">
                 <AIAssistantDashboard />
-                <RecentActivity searchTerm={searchTerm} />
+                <RecentActivity />
+                
+                <div className="bg-emerald-600 rounded-[2rem] p-6 lg:p-8 text-white relative overflow-hidden shadow-xl shadow-emerald-100">
+                  <div className="relative z-10 space-y-4">
+                    <h3 className="text-lg lg:text-xl font-bold tracking-tight">{t.needSupport}</h3>
+                    <p className="text-sm text-emerald-50 font-medium opacity-90 leading-relaxed max-w-[280px]">
+                      {t.supportText}
+                    </p>
+                    <button 
+                      onClick={() => navigate('/support')}
+                      className="bg-white text-emerald-600 px-6 py-3 rounded-2xl font-bold text-xs uppercase tracking-widest shadow-lg hover:scale-105 transition-transform active:scale-95"
+                    >
+                      {t.liveChat}
+                    </button>
+                  </div>
+                  <Plus className="absolute -bottom-10 -right-10 size-32 lg:size-48 opacity-10 rotate-12" />
+                </div>
               </div>
             </div>
+
           </div>
+
           <PortfolioHealth />
         </div>
       </main>
+
+      <button 
+        onClick={scrollToSimulator}
+        className="fixed bottom-6 right-6 lg:hidden w-14 h-14 bg-emerald-600 text-white rounded-full flex items-center justify-center shadow-2xl shadow-emerald-200 z-50 hover:scale-110 active:scale-95 transition-all"
+      >
+        <Plus className="size-7" />
+      </button>
     </div>
   );
 }

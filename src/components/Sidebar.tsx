@@ -10,12 +10,13 @@ import {
   X, 
   Users, 
   PieChart, 
+  CreditCard, 
   Calendar,
   MessageSquareText,
   Zap,
   Shield
 } from 'lucide-react';
-import { cn } from '../lib/utils'; // 🔥 Caminho corrigido para relativo
+import {cn} from '@/src/lib/utils';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../contexts/ThemeContext';
@@ -28,7 +29,7 @@ interface SidebarProps {
   onClose: () => void;
 }
 
-export function Sidebar({ className, isOpen, onClose }: SidebarProps) {
+export function Sidebar({className, isOpen, onClose}: SidebarProps) {
   const { language, setLanguage, t } = useLanguage();
   const { currentTheme } = useTheme();
   const { user, profile, signOut } = useAuth();
@@ -38,17 +39,15 @@ export function Sidebar({ className, isOpen, onClose }: SidebarProps) {
 
   const navItems = React.useMemo(() => {
     const items = [
-      { name: t.overview, icon: LayoutDashboard, path: '/' },
-      { name: t.clients, icon: Users, path: '/clients' },
-      { name: t.loans, icon: Landmark, path: '/loans' },
-      { name: t.calendar, icon: Calendar, path: '/calendar' },
-      { name: t.payments, icon: Wallet, path: '/payments' },
-      // 🔥 Novo item para acesso direto à aba de Assinatura
-      { name: t.subscriptionPlans || 'Assinatura', icon: Zap, path: '/settings', tab: 'billing' },
-      { name: t.adminSupport, icon: MessageSquareText, path: '/support' },
-      { name: t.financial, icon: BarChart3, path: '/financial' },
-      { name: t.analytics, icon: PieChart, path: '/analytics' },
-      { name: t.settings, icon: Settings, path: '/settings', tab: 'profile' },
+      {name: t.overview, icon: LayoutDashboard, path: '/'},
+      {name: t.clients, icon: Users, path: '/clients'},
+      {name: t.loans, icon: Landmark, path: '/loans'},
+      {name: t.calendar, icon: Calendar, path: '/calendar'},
+      {name: t.payments, icon: Wallet, path: '/payments'},
+      {name: t.adminSupport, icon: MessageSquareText, path: '/support'},
+      {name: t.financial, icon: BarChart3, path: '/financial'},
+      {name: t.analytics, icon: PieChart, path: '/analytics'},
+      {name: t.settings, icon: Settings, path: '/settings'},
     ];
 
     if (profile?.is_admin) {
@@ -69,6 +68,7 @@ export function Sidebar({ className, isOpen, onClose }: SidebarProps) {
         onClick={onClose}
       />
 
+      {/* Alteramos o h-screen para h-[100dvh] e adicionamos overflow-y-auto nesta linha abaixo */}
       <aside className={cn(
         "fixed left-0 top-0 h-[100dvh] overflow-y-auto bg-white border-r border-slate-100 p-6 z-[70] transition-transform duration-300 ease-in-out lg:translate-x-0 w-72 flex flex-col",
         isOpen ? "translate-x-0" : "-translate-x-full",
@@ -86,39 +86,36 @@ export function Sidebar({ className, isOpen, onClose }: SidebarProps) {
           </button>
         </div>
 
+        {/* Adicionamos margem inferior (mb-6) para dar um respiro antes do rodapé */}
         <nav className="flex-1 flex flex-col gap-2 mb-6">
-          {navItems.map((item) => {
-            const isActive = location.pathname === item.path && 
-                            (!('tab' in item) || (location.state as any)?.activeTab === item.tab);
-
-            return (
-              <button
-                key={item.name}
-                onClick={() => {
-                  if (item.path !== '#') {
-                    // 🔥 Passamos a aba pretendida através do estado da rota
-                    const state = item.path === '/settings' 
-                      ? { activeTab: (item as any).tab || 'profile' }
-                      : undefined;
-                      
-                    navigate(item.path, { state });
-                    onClose();
-                  }
-                }}
-                className={cn(
-                  "flex items-center gap-4 px-4 py-3 rounded-xl transition-all duration-200 group text-sm font-medium w-full text-left",
-                  isActive 
-                    ? "bg-primary-50 text-primary-600 font-bold" 
-                    : "text-slate-500 hover:bg-slate-50 hover:text-primary-500"
-                )}
-              >
-                <item.icon className={cn("size-5", isActive ? "text-primary-600" : "text-slate-400 group-hover:text-primary-500")} />
-                {item.name}
-              </button>
-            );
-          })}
+          {navItems.map((item) => (
+            <button
+              key={item.name}
+              onClick={() => {
+                if (item.path !== '#') {
+                  // Determine active tab for settings
+                  const state = item.path === '/settings' 
+                    ? { activeTab: item.name === 'Planos & Assinatura' ? 'billing' : 'profile' }
+                    : undefined;
+                    
+                  navigate(item.path, { state });
+                  onClose();
+                }
+              }}
+              className={cn(
+                "flex items-center gap-4 px-4 py-3 rounded-xl transition-all duration-200 group text-sm font-medium w-full text-left",
+                location.pathname === item.path 
+                  ? "bg-primary-50 text-primary-600 font-bold" 
+                  : "text-slate-500 hover:bg-slate-50 hover:text-primary-500"
+              )}
+            >
+              <item.icon className={cn("size-5", location.pathname === item.path ? "text-primary-600" : "text-slate-400 group-hover:text-primary-500")} />
+              {item.name}
+            </button>
+          ))}
         </nav>
 
+        {/* Adicionamos shrink-0 para evitar que o rodapé seja esmagado caso a tela seja muito pequena */}
         <div className="pt-6 border-t border-slate-100 space-y-4 shrink-0">
           {/* Language Toggle */}
           <div className="px-4 py-2">

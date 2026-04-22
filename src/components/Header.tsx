@@ -11,20 +11,9 @@ interface HeaderProps {
   title: string;
   onMenuClick: () => void;
   children?: React.ReactNode;
-  // 🔥 Adicionadas propriedades para busca funcional
-  searchValue?: string;
-  onSearchChange?: (value: string) => void;
-  searchPlaceholder?: string;
 }
 
-export function Header({ 
-  title, 
-  onMenuClick, 
-  children,
-  searchValue,
-  onSearchChange,
-  searchPlaceholder 
-}: HeaderProps) {
+export function Header({ title, onMenuClick, children }: HeaderProps) {
   const { user } = useAuth();
   const { t } = useLanguage();
   const [isProfileOpen, setIsProfileOpen] = useState(false);
@@ -35,7 +24,7 @@ export function Header({
   useEffect(() => {
     async function fetchProfile() {
       if (!user) return;
-      const { data } = await supabase.from('profiles').select('plan_type').eq('id', user.id).single();
+      const { data } = await supabase.from('profiles').select('plan_type').single();
       if (data) setProfile(data);
     }
     fetchProfile();
@@ -92,14 +81,11 @@ export function Header({
         </div>
         
         <div className="flex items-center gap-2 lg:gap-6 flex-1 justify-end">
-          {/* 🔥 Barra de Pesquisa agora é funcional */}
-          <div className="hidden xl:flex items-center bg-slate-50 px-4 py-2.5 rounded-2xl border border-slate-100 focus-within:ring-2 focus-within:ring-emerald-100 transition-all">
+          <div className="hidden xl:flex items-center bg-slate-50 px-4 py-2.5 rounded-2xl border border-slate-100 focus-within:ring-2 focus-within:ring-primary-100 transition-all">
             <Search className="size-4 text-slate-400 mr-2" />
             <input 
               type="text" 
-              value={searchValue || ''}
-              onChange={(e) => onSearchChange?.(e.target.value)}
-              placeholder={searchPlaceholder || t.search || "Search..."} 
+              placeholder="Search..." 
               className="bg-transparent border-none focus:ring-0 text-sm w-32 xl:w-64 text-slate-600 placeholder:text-slate-400 font-medium" 
             />
           </div>
@@ -111,12 +97,12 @@ export function Header({
                 onClick={() => setIsNotificationsOpen(!isNotificationsOpen)}
                 className={cn(
                   "p-2 lg:p-2.5 rounded-xl transition-all relative",
-                  isNotificationsOpen ? "bg-emerald-50 text-emerald-600" : "hover:bg-slate-50 text-slate-400"
+                  isNotificationsOpen ? "bg-primary-50 text-primary-600" : "hover:bg-slate-50 text-slate-400"
                 )}
               >
                 <Bell className="size-5" />
                 {unreadCount > 0 && (
-                  <span className="absolute top-2 right-2 w-2 h-2 bg-emerald-500 rounded-full border-2 border-white animate-pulse" />
+                  <span className="absolute top-2 right-2 w-2 h-2 bg-primary-500 rounded-full border-2 border-white animate-pulse" />
                 )}
               </button>
 
@@ -136,14 +122,12 @@ export function Header({
               onClick={() => setIsProfileOpen(true)}
             >
               <div className="hidden md:flex flex-col items-end">
-                <span className="text-xs font-bold text-slate-900 leading-none">
-                  {user?.user_metadata?.username || user?.user_metadata?.full_name || user?.email?.split('@')[0]}
-                </span>
+                <span className="text-xs font-bold text-slate-900 leading-none">{user?.user_metadata?.username || user?.user_metadata?.full_name || user?.email?.split('@')[0]}</span>
                 <span className="text-[10px] font-black text-emerald-600 uppercase mt-1 tracking-widest bg-emerald-50 px-2 py-0.5 rounded-md">
                   Plano {profile?.plan_type || 'Free'}
                 </span>
               </div>
-              <div className="w-8 h-8 lg:w-10 lg:h-10 rounded-xl overflow-hidden shadow-sm border border-slate-100 ring-2 ring-transparent hover:ring-emerald-100 transition-all">
+              <div className="w-8 h-8 lg:w-10 lg:h-10 rounded-xl overflow-hidden shadow-sm border border-slate-100 ring-2 ring-transparent hover:ring-primary-100 transition-all">
                 <img 
                   src={user?.user_metadata?.avatar_url || `https://ui-avatars.com/api/?name=${user?.email}&background=10b981&color=fff`} 
                   alt="User" 

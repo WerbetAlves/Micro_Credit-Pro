@@ -7,6 +7,7 @@ import {
   Sparkles, 
   Palette,
   Check,
+  Zap,
   RefreshCw,
   Upload,
   Trash2

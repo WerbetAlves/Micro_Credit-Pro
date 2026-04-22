@@ -1,11 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { 
   MessageSquare, 
+  Search, 
   Filter, 
   Plus, 
   Clock, 
   CheckCircle2, 
-  AlertCircle,
+  AlertCircle, 
+  MoreVertical, 
   User, 
   Tag, 
   MessageSquareText, 
@@ -37,41 +39,36 @@ interface SupportTicket {
 }
 
 export function Support() {
-  const { t, formatDate } = useLanguage();
-  const { user, profile } = useAuth();
+  const { t, formatCurrency, formatDate } = useLanguage();
+  const { user } = useAuth();
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [tickets, setTickets] = useState<SupportTicket[]>([]);
   const [loading, setLoading] = useState(true);
-  const [search, setSearch] = useState(''); // 🔥 Estado da pesquisa controlado pelo Header
+  const [search, setSearch] = useState('');
   const [filterStatus, setFilterStatus] = useState<string>('all');
   
+  // Modal states
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [formLoading, setFormLoading] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
 
-  const [formData, setFormData] = useState<{
-    subject: string;
-    description: string;
-    priority: 'low' | 'medium' | 'high';
-    category: 'technical' | 'billing' | 'feature' | 'other';
-  }>({
+  const [formData, setFormData] = useState({
     subject: '',
     description: '',
-    priority: 'medium',
-    category: 'technical'
+    priority: 'medium' as const,
+    category: 'technical' as const
   });
 
   useEffect(() => {
-    if (user) {
-      fetchTickets();
-    }
-  }, [user, profile]);
+    fetchTickets();
+  }, [user]);
 
   async function fetchTickets() {
     if (!user) return;
     setLoading(true);
     try {
-      const isAdmin = profile?.is_admin || false;
+      // Robust role check for both user object and metadata
+      const isAdmin = (user as any).role === 'admin' || user.user_metadata?.role === 'admin';
       
       let query = supabase
         .from('support_tickets')
@@ -91,8 +88,8 @@ export function Support() {
 
       if (error) throw error;
       setTickets(data || []);
-    } catch (error) {
-      console.error('Error fetching tickets:', (error as Error).message);
+    } catch (err: any) {
+      console.error('Error fetching tickets:', err.message);
     } finally {
       setLoading(false);
     }
@@ -121,8 +118,8 @@ export function Support() {
         category: 'technical'
       });
       fetchTickets();
-    } catch (error) {
-      setFormError((error as Error).message);
+    } catch (err: any) {
+      setFormError(err.message);
     } finally {
       setFormLoading(false);
     }
@@ -137,16 +134,14 @@ export function Support() {
       
       if (error) throw error;
       fetchTickets();
-    } catch (error) {
-      console.error('Error updating status:', (error as Error).message);
+    } catch (err: any) {
+      console.error('Error updating status:', err.message);
     }
   };
 
   const filteredTickets = tickets.filter(t => {
-    const lowerSearch = search.toLowerCase();
-    const matchesSearch = t.subject.toLowerCase().includes(lowerSearch) || 
-                          t.description.toLowerCase().includes(lowerSearch) ||
-                          t.id.toLowerCase().includes(lowerSearch);
+    const matchesSearch = t.subject.toLowerCase().includes(search.toLowerCase()) || 
+                          t.description.toLowerCase().includes(search.toLowerCase());
     const matchesStatus = filterStatus === 'all' || t.status === filterStatus;
     return matchesSearch && matchesStatus;
   });
@@ -175,14 +170,7 @@ export function Support() {
       <Sidebar isOpen={isSidebarOpen} onClose={() => setIsSidebarOpen(false)} />
 
       <main className="flex-1 lg:ml-72 min-h-screen pb-20 w-full transition-all duration-300">
-        {/* 🔥 Header agora recebe as props da pesquisa global */}
-        <Header 
-          title={t.supportCenter} 
-          onMenuClick={() => setIsSidebarOpen(true)}
-          searchValue={search}
-          onSearchChange={setSearch}
-          searchPlaceholder={t.searchTickets}
-        >
+        <Header title={t.supportCenter} onMenuClick={() => setIsSidebarOpen(true)}>
           <button 
             onClick={() => setIsModalOpen(true)}
             className="flex items-center gap-2 bg-emerald-500 text-white px-4 py-2.5 rounded-2xl font-bold text-xs uppercase tracking-widest shadow-lg shadow-emerald-200 hover:bg-emerald-600 transition-all active:scale-95"
@@ -192,7 +180,7 @@ export function Support() {
           </button>
         </Header>
 
-        <div className="px-4 lg:px-8 py-8 w-full max-w-[1600px] mx-auto">
+        <div className="px-4 lg:px-8 py-8 w-full">
           {/* AI Banner */}
           <section className="mb-10">
             <div className="bg-slate-900 rounded-[2.5rem] p-8 lg:p-12 text-white relative overflow-hidden shadow-2xl">
@@ -205,22 +193,23 @@ export function Support() {
                     <span className="text-xs font-black uppercase tracking-[0.3em] text-emerald-400">Emerald AI Intelligence</span>
                   </div>
                   <h2 className="text-3xl lg:text-4xl font-black tracking-tight leading-tight">
-                    {t.talkToAiFirst?.split('.')[0] || 'Fale com a IA Primeiro'}? <br/>
-                    <span className="text-emerald-400">{t.talkToAiFirst?.split('.')[1] || 'Respostas instantâneas'}</span>
+                    {t.talkToAiFirst.split('.')[0]}? <br/>
+                    <span className="text-emerald-400">{t.talkToAiFirst.split('.')[1] || ''}</span>
                   </h2>
                   <p className="text-slate-400 font-medium text-lg leading-relaxed max-w-lg">
-                    {t.aiSupportInstruction || 'Nossa assistente de IA pode resolver a maioria das dúvidas em segundos. Tente usá-la antes de abrir um ticket.'}
+                    {t.aiSupportInstruction}
                   </p>
                   <div className="flex items-center gap-4 pt-4">
                     <button 
                       onClick={() => {
+                        // In a real app we might open the floating assistant
                         const assistantBtn = document.querySelector('[data-assistant-trigger]');
                         if (assistantBtn instanceof HTMLElement) assistantBtn.click();
                       }}
                       className="bg-emerald-500 text-white px-8 py-4 rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl shadow-emerald-500/20 hover:scale-105 transition-all active:scale-95 flex items-center gap-3"
                     >
                       <MessageSquareText className="size-4" />
-                      {t.startConversation || 'Iniciar Conversa'}
+                      {t.startConversation}
                     </button>
                   </div>
                 </div>
@@ -248,9 +237,18 @@ export function Support() {
             </div>
           </section>
 
-          {/* Filters Bar */}
-          <div className="flex flex-col sm:flex-row gap-4 mb-8 justify-end">
-            {/* 🔥 A barra de pesquisa antiga foi removida daqui, agora está no Header */}
+          {/* Search and Filters */}
+          <div className="flex flex-col sm:flex-row gap-4 mb-8">
+            <div className="flex-1 relative">
+              <Search className="absolute left-4 top-1/2 -translate-y-1/2 size-5 text-slate-300" />
+              <input 
+                type="text" 
+                placeholder={t.searchTickets} 
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="w-full pl-12 pr-4 py-4 bg-white border border-slate-100 rounded-[1.5rem] shadow-sm focus:ring-2 focus:ring-emerald-100 outline-none transition-all text-sm font-medium text-slate-600"
+              />
+            </div>
             <div className="flex items-center gap-2 bg-white px-4 py-2 border border-slate-100 rounded-[1.5rem] shadow-sm">
                 <Filter className="size-4 text-slate-400" />
                 <select 
@@ -258,11 +256,11 @@ export function Support() {
                     onChange={(e) => setFilterStatus(e.target.value)}
                     className="bg-transparent border-none outline-none text-xs font-bold text-slate-500 uppercase tracking-widest cursor-pointer focus:ring-0"
                 >
-                    <option value="all">{t.allStatus || 'Todos'}</option>
-                    <option value="open">{t.open || 'Aberto'}</option>
-                    <option value="in_progress">{t.inProgress || 'Em andamento'}</option>
-                    <option value="resolved">{t.resolved || 'Resolvido'}</option>
-                    <option value="closed">{t.closed || 'Fechado'}</option>
+                    <option value="all">{t.allStatus}</option>
+                    <option value="open">{t.open}</option>
+                    <option value="in_progress">{t.inProgress}</option>
+                    <option value="resolved">{t.resolved}</option>
+                    <option value="closed">{t.closed}</option>
                 </select>
             </div>
           </div>
@@ -271,23 +269,21 @@ export function Support() {
           {loading ? (
              <div className="flex flex-col items-center justify-center py-20 gap-4">
                 <div className="w-12 h-12 border-4 border-emerald-100 border-t-emerald-500 rounded-full animate-spin" />
-                <p className="text-sm font-bold text-slate-400 uppercase tracking-widest">{t.loadingTickets || 'Carregando...'}</p>
+                <p className="text-sm font-bold text-slate-400 uppercase tracking-widest">{t.loadingTickets}</p>
              </div>
           ) : filteredTickets.length === 0 ? (
             <div className="bg-white rounded-[2.5rem] p-12 text-center border border-slate-50 shadow-sm col-span-full">
               <div className="w-16 h-16 bg-slate-50 rounded-2xl flex items-center justify-center mx-auto mb-4 text-slate-300">
                 <MessageSquare className="size-8" />
               </div>
-              <h3 className="text-lg font-bold text-slate-900 mb-2">{search ? 'Nenhum ticket encontrado' : (t.noTickets || 'Sem tickets')}</h3>
-              <p className="text-sm text-slate-400 max-w-xs mx-auto mb-6">{t.noTicketsDescription || 'Você não tem nenhum ticket de suporte no momento.'}</p>
-              {!search && (
-                <button 
-                  onClick={() => setIsModalOpen(true)}
-                  className="bg-emerald-50 text-emerald-600 px-6 py-3 rounded-xl font-black text-xs uppercase tracking-widest hover:bg-emerald-100 transition-all active:scale-95"
-                >
-                  {t.openFirstTicket || 'Abrir primeiro ticket'}
-                </button>
-              )}
+              <h3 className="text-lg font-bold text-slate-900 mb-2">{t.noTickets}</h3>
+              <p className="text-sm text-slate-400 max-w-xs mx-auto mb-6">{t.noTicketsDescription}</p>
+              <button 
+                onClick={() => setIsModalOpen(true)}
+                className="bg-emerald-50 text-emerald-600 px-6 py-3 rounded-xl font-black text-xs uppercase tracking-widest hover:bg-emerald-100 transition-all active:scale-95"
+              >
+                {t.openFirstTicket}
+              </button>
             </div>
           ) : (
             <div className="grid grid-cols-1 gap-4">
@@ -342,13 +338,14 @@ export function Support() {
                         </span>
                       </div>
                       
-                      {profile?.is_admin && (
+                      {/* Admin Controls */}
+                      {((user as any).role === 'admin' || user.user_metadata?.role === 'admin') && (
                         <div className="flex gap-2">
                            {ticket.status === 'open' && (
                              <button 
                                onClick={() => handleUpdateStatus(ticket.id, 'in_progress')}
                                className="p-2.5 bg-blue-50 text-blue-600 rounded-xl hover:bg-blue-100 transition-all active:scale-90"
-                               title={t.markInProgress || 'Marcar em progresso'}
+                               title={t.markInProgress}
                              >
                                <ArrowRight className="size-4" />
                              </button>
@@ -357,7 +354,7 @@ export function Support() {
                              <button 
                                onClick={() => handleUpdateStatus(ticket.id, 'resolved')}
                                className="p-2.5 bg-emerald-50 text-emerald-600 rounded-xl hover:bg-emerald-100 transition-all active:scale-90"
-                               title={t.resolveTicket || 'Resolver ticket'}
+                               title={t.resolveTicket}
                              >
                                <CheckCircle2 className="size-4" />
                              </button>
@@ -394,8 +391,8 @@ export function Support() {
                     <MessageSquareText className="size-6 text-emerald-600" />
                   </div>
                   <div>
-                    <h3 className="text-xl font-black text-slate-900 uppercase tracking-tight">{t.openTicket || 'Abrir Ticket'}</h3>
-                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{t.newSupportTicket || 'Novo Ticket de Suporte'}</p>
+                    <h3 className="text-xl font-black text-slate-900 uppercase tracking-tight">{t.openTicket}</h3>
+                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{t.newSupportTicket}</p>
                   </div>
                 </div>
 
@@ -408,11 +405,11 @@ export function Support() {
                   )}
 
                   <div className="space-y-2">
-                    <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400 ml-1">{t.ticketSubject || 'Assunto'}</label>
+                    <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400 ml-1">{t.ticketSubject}</label>
                     <input 
                       type="text"
                       required
-                      placeholder={t.subjectPlaceholder || 'Ex: Dúvida sobre faturamento'}
+                      placeholder={t.subjectPlaceholder}
                       value={formData.subject}
                       onChange={e => setFormData({...formData, subject: e.target.value})}
                       className="w-full px-4 py-4 bg-slate-50 border-none rounded-2xl focus:ring-2 focus:ring-emerald-500 outline-none text-sm font-bold text-slate-900 transition-all"
@@ -421,38 +418,38 @@ export function Support() {
 
                   <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-2">
-                      <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400 ml-1">{t.ticketPriority || 'Prioridade'}</label>
+                      <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400 ml-1">{t.ticketPriority}</label>
                       <select 
                         value={formData.priority}
-                        onChange={e => setFormData({...formData, priority: e.target.value as 'low' | 'medium' | 'high'})}
+                        onChange={e => setFormData({...formData, priority: e.target.value as any})}
                         className="w-full px-4 py-4 bg-slate-50 border-none rounded-2xl focus:ring-2 focus:ring-emerald-500 outline-none text-sm font-bold text-slate-900 transition-all cursor-pointer"
                       >
-                        <option value="low">{t.low || 'Baixa'}</option>
-                        <option value="medium">{t.medium || 'Média'}</option>
-                        <option value="high">{t.high || 'Alta'}</option>
+                        <option value="low">{t.low}</option>
+                        <option value="medium">{t.medium}</option>
+                        <option value="high">{t.high}</option>
                       </select>
                     </div>
                     <div className="space-y-2">
-                      <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400 ml-1">{t.category || 'Categoria'}</label>
+                      <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400 ml-1">{t.category}</label>
                       <select 
                         value={formData.category}
-                        onChange={e => setFormData({...formData, category: e.target.value as 'technical' | 'billing' | 'feature' | 'other'})}
+                        onChange={e => setFormData({...formData, category: e.target.value as any})}
                         className="w-full px-4 py-4 bg-slate-50 border-none rounded-2xl focus:ring-2 focus:ring-emerald-500 outline-none text-sm font-bold text-slate-900 transition-all cursor-pointer"
                       >
-                        <option value="technical">{t.technical || 'Técnico'}</option>
-                        <option value="billing">{t.billing || 'Faturamento'}</option>
-                        <option value="feature">{t.feature || 'Nova Funcionalidade'}</option>
-                        <option value="other">{t.other || 'Outro'}</option>
+                        <option value="technical">{t.technical}</option>
+                        <option value="billing">{t.billing}</option>
+                        <option value="feature">{t.feature}</option>
+                        <option value="other">{t.other}</option>
                       </select>
                     </div>
                   </div>
 
                   <div className="space-y-2">
-                    <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400 ml-1">{t.ticketDescription || 'Descrição'}</label>
+                    <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400 ml-1">{t.ticketDescription}</label>
                     <textarea 
                       required
                       rows={4}
-                      placeholder={t.descriptionPlaceholder || 'Descreva seu problema com detalhes...'}
+                      placeholder={t.descriptionPlaceholder}
                       value={formData.description}
                       onChange={e => setFormData({...formData, description: e.target.value})}
                       className="w-full px-4 py-4 bg-slate-50 border-none rounded-2xl focus:ring-2 focus:ring-emerald-500 outline-none text-sm font-bold text-slate-900 transition-all resize-none"
@@ -465,14 +462,14 @@ export function Support() {
                       onClick={() => setIsModalOpen(false)}
                       className="flex-1 px-6 py-4 bg-slate-50 text-slate-500 font-bold rounded-2xl hover:bg-slate-100 transition-all uppercase tracking-widest text-xs"
                     >
-                      {t.cancel || 'Cancelar'}
+                      {t.cancel}
                     </button>
                     <button 
                       type="submit"
                       disabled={formLoading}
                       className="flex-3 px-10 py-4 bg-emerald-500 text-white font-black rounded-2xl hover:bg-emerald-600 shadow-lg shadow-emerald-200 transition-all active:scale-[0.98] disabled:opacity-50 uppercase tracking-[0.15em] text-xs"
                     >
-                      {formLoading ? (t.processing || 'Processando...') : (t.createTicket || 'Criar Ticket')}
+                      {formLoading ? t.processing : t.createTicket}
                     </button>
                   </div>
                 </form>
@@ -481,9 +478,9 @@ export function Support() {
           )}
         </AnimatePresence>
         
-        {/* Assistente de IA flutuante (Oculto pois é acionado via banner) */}
+        {/* Floating AI Assistant */}
         <div className="hidden">
-            <AIAssistantDashboard />
+           <AIAssistantDashboard />
         </div>
       </main>
     </div>
