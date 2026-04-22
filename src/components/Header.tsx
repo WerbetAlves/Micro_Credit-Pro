@@ -24,7 +24,11 @@ export function Header({ title, onMenuClick, children }: HeaderProps) {
   useEffect(() => {
     async function fetchProfile() {
       if (!user) return;
-      const { data } = await supabase.from('profiles').select('plan_type').single();
+      const { data } = await supabase
+        .from('profiles')
+        .select('plan_type')
+        .eq('id', user.id)
+        .single();
       if (data) setProfile(data);
     }
     fetchProfile();

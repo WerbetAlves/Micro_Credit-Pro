@@ -1,16 +1,15 @@
 import { createClient as createSupabaseClient } from '../utils/supabase/client';
 
-// MODO FORGE SAAS: False permite conexão real se as chaves existirem. Fallback seguro.
-export const FORCE_SIMULATION = false; 
+// MODO FORGE SAAS: False permite conexao real se as chaves existirem. Fallback seguro.
+export const FORCE_SIMULATION = false;
 
-// Usamos import.meta.env porque este é um projeto Vite
-// Também usamos process.env como fallback para compatibilidade com o define do vite.config.ts
+// Usamos import.meta.env porque este e um projeto Vite
+// Tambem usamos process.env como fallback para compatibilidade com o define do vite.config.ts
 // @ts-ignore
 const supabaseUrl = (import.meta.env.VITE_SUPABASE_URL || import.meta.env.NEXT_PUBLIC_SUPABASE_URL || process.env.VITE_SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || '').trim();
 // @ts-ignore
 const supabaseAnonKey = (import.meta.env.VITE_SUPABASE_ANON_KEY || import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY || import.meta.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY || process.env.VITE_SUPABASE_ANON_KEY || process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY || '').trim();
 
-// Function to check if the URL is valid
 const isValidUrl = (url: string) => {
   try {
     return (url.startsWith('http://') || url.startsWith('https://')) && url.includes('.');
@@ -19,19 +18,18 @@ const isValidUrl = (url: string) => {
   }
 };
 
-export const isConfigured = !FORCE_SIMULATION && 
-  isValidUrl(supabaseUrl) && 
-  supabaseAnonKey !== '' && 
+export const isConfigured = !FORCE_SIMULATION &&
+  isValidUrl(supabaseUrl) &&
+  supabaseAnonKey !== '' &&
   supabaseAnonKey !== 'undefined' &&
   !supabaseUrl.includes('your-project-url');
 
 if (isConfigured) {
-  console.log('✅ Supabase: Conexão de produção ATIVA');
+  console.log('Supabase: conexao de producao ativa');
 } else {
-  console.log('💡 Supabase: Rodando em modo SIMULAÇÃO (Configuração ausente ou incompleta)');
+  console.log('Supabase: rodando em modo simulacao');
 }
 
-// HELPER: Simulação com Persistência em LocalStorage para desenvolvimento do SaaS
 const getLocalData = (key: string, initial: any[]) => {
   const saved = localStorage.getItem(`sim_db_${key}`);
   if (saved) return JSON.parse(saved);
@@ -46,9 +44,53 @@ const saveLocalData = (key: string, data: any[]) => {
 export const supabase = isConfigured
   ? createSupabaseClient()
   : (() => {
+      const mockSessionKey = 'sim_auth_session';
+      const authListeners = new Set<(event: string, session: any) => void>();
+
+      const buildMockSession = (user: any) => ({
+        access_token: 'abc',
+        refresh_token: 'mock-refresh-token',
+        token_type: 'bearer',
+        user,
+      });
+
+      const getStoredSession = () => {
+        const saved = localStorage.getItem(mockSessionKey);
+        return saved ? JSON.parse(saved) : null;
+      };
+
+      const setStoredSession = (session: any) => {
+        if (session) {
+          localStorage.setItem(mockSessionKey, JSON.stringify(session));
+        } else {
+          localStorage.removeItem(mockSessionKey);
+        }
+      };
+
+      const getDefaultUser = () => ({
+        id: '123',
+        email: 'admin@emerald.pro',
+        user_metadata: {
+          full_name: 'Usuario Admin Demo',
+        }
+      });
+
+      const getCurrentSession = () => {
+        const stored = getStoredSession();
+        if (stored) return stored;
+
+        const session = buildMockSession(getDefaultUser());
+        setStoredSession(session);
+        return session;
+      };
+
+      const notifyAuthListeners = (event: string, session: any) => {
+        authListeners.forEach(listener => listener(event, session));
+      };
+
       const from = (table: string) => {
         let filters: Array<{ type: string; column: string; value: any }> = [];
-        
+
         const applyFilters = (data: any[]) => {
           let filtered = [...data];
           filters.forEach(f => {
@@ -65,34 +107,34 @@ export const supabase = isConfigured
           let operation: 'select' | 'insert' | 'update' | 'delete' | null = null;
           let opArgs: any = null;
           let opOptions: any = null;
+          let shouldReturnRows = false;
 
           const execute = async () => {
             if (operation === 'select') {
               let baseData = getLocalData(table, []);
-              
-              // Seed data if empty
+
               if (table === 'wallets' && baseData.length === 0) {
                 baseData = [
                   { id: 'w1', name: 'Carteira Principal', balance: 5000, type: 'bank', user_id: '123', is_connected: false },
-                  { id: 'w2', name: 'Cofre Físico', balance: 1200, type: 'physical', user_id: '123', is_connected: false }
+                  { id: 'w2', name: 'Cofre Fisico', balance: 1200, type: 'physical', user_id: '123', is_connected: false }
                 ];
                 saveLocalData(table, baseData);
               }
+
               if (table === 'profiles' && baseData.length === 0) {
-                baseData = [{ id: '1 profile', user_id: '123', full_name: 'Usuário Admin Demo', plan_type: 'free' }];
+                baseData = [{ id: '123', user_id: '123', full_name: 'Usuario Admin Demo', plan_type: 'free' }];
                 saveLocalData(table, baseData);
               }
 
               let filtered = applyFilters(baseData);
 
-              // Handle Joins (Hierarchical support for SaaS Emerald)
               if (opArgs?.includes('loans')) {
                 const loans = getLocalData('loans', []);
                 const clients = getLocalData('clients', []);
                 filtered = filtered.map(item => {
-                  const loan = loans.find(l => l.id === item.loan_id);
+                  const loan = loans.find((l: any) => l.id === item.loan_id);
                   if (loan && opArgs.includes('clients')) {
-                    loan.clients = clients.find(c => c.id === loan.client_id);
+                    loan.clients = clients.find((c: any) => c.id === loan.client_id);
                   }
                   return { ...item, loans: loan };
                 });
@@ -100,7 +142,7 @@ export const supabase = isConfigured
                 const clients = getLocalData('clients', []);
                 filtered = filtered.map(item => ({
                   ...item,
-                  clients: clients.find(c => c.id === item.client_id)
+                  clients: clients.find((c: any) => c.id === item.client_id)
                 }));
               }
 
@@ -123,24 +165,31 @@ export const supabase = isConfigured
               }));
               const updated = [...current, ...toInsert];
               saveLocalData(table, updated);
-              return { data: Array.isArray(opArgs) ? toInsert : toInsert[0], error: null };
+              return {
+                data: shouldReturnRows ? toInsert : (Array.isArray(opArgs) ? toInsert : toInsert[0]),
+                error: null
+              };
             }
 
             if (operation === 'update') {
               const current = getLocalData(table, []);
+              const updatedRows: any[] = [];
               const updated = current.map((item: any) => {
                 let matches = true;
                 filters.forEach(f => {
                   if (f.type === 'eq' && item[f.column] !== f.value) matches = false;
                 });
-                
+
                 if (matches) {
-                  return { ...item, ...opArgs };
+                  const merged = { ...item, ...opArgs };
+                  updatedRows.push(merged);
+                  return merged;
                 }
+
                 return item;
               });
               saveLocalData(table, updated);
-              return { data: opArgs, error: null };
+              return { data: shouldReturnRows ? updatedRows : opArgs, error: null };
             }
 
             if (operation === 'delete') {
@@ -164,9 +213,13 @@ export const supabase = isConfigured
               execute().then(resolve);
             },
             select: (columns?: string, options?: { count?: string; head?: boolean }) => {
-              operation = 'select';
-              opArgs = columns;
-              opOptions = options;
+              if (operation === 'insert' || operation === 'update' || operation === 'delete') {
+                shouldReturnRows = true;
+              } else {
+                operation = 'select';
+                opArgs = columns;
+                opOptions = options;
+              }
               return chain;
             },
             insert: (rows: any | any[]) => {
@@ -212,13 +265,14 @@ export const supabase = isConfigured
             limit: () => chain,
             single: async () => {
               const { data, error } = await execute();
-              return { data: (data && Array.isArray(data)) ? data[0] : (data || null), error };
+              return { data: Array.isArray(data) ? data[0] : (data || null), error };
             },
             maybeSingle: async () => {
               const { data, error } = await execute();
-              return { data: (data && Array.isArray(data)) ? data[0] : (data || null), error };
+              return { data: Array.isArray(data) ? data[0] : (data || null), error };
             }
           };
+
           return chain;
         };
 
@@ -228,17 +282,65 @@ export const supabase = isConfigured
       return {
         from,
         auth: {
-          signInWithPassword: () => Promise.resolve({ data: { user: { id: '123', email: 'admin@emerald.pro' }, session: { access_token: 'abc' } }, error: null }),
-          signInWithOAuth: () => Promise.resolve({ data: { user: { id: '123' } }, error: null }),
-          signUp: () => Promise.resolve({ data: { user: { id: '123' } }, error: null }),
-          signOut: () => Promise.resolve({ error: null }),
-          onAuthStateChange: (cb: any) => {
-            setTimeout(() => cb('SIGNED_IN', { user: { id: '123', email: 'admin@emerald.pro' }, session: { access_token: 'abc' } }), 100);
-            return { data: { subscription: { unsubscribe: () => {} } } };
+          signInWithPassword: ({ email }: { email: string }) => {
+            const session = buildMockSession({
+              ...getDefaultUser(),
+              email: email || 'admin@emerald.pro',
+            });
+            setStoredSession(session);
+            notifyAuthListeners('SIGNED_IN', session);
+            return Promise.resolve({ data: { user: session.user, session }, error: null });
           },
-          getSession: () => Promise.resolve({ data: { session: { user: { id: '123', email: 'admin@emerald.pro' }, access_token: 'abc' } }, error: null }),
-          getUser: () => Promise.resolve({ data: { user: { id: '123', email: 'admin@emerald.pro' } }, error: null }),
-          updateUser: (data: any) => Promise.resolve({ data: { user: { id: '123', ...data } }, error: null }),
+          signInWithOAuth: () => {
+            const session = getCurrentSession();
+            notifyAuthListeners('SIGNED_IN', session);
+            return Promise.resolve({ data: { user: session.user, session }, error: null });
+          },
+          signUp: ({ email, options }: any) => {
+            const session = buildMockSession({
+              ...getDefaultUser(),
+              email: email || 'admin@emerald.pro',
+              user_metadata: {
+                full_name: options?.data?.full_name || 'Usuario Admin Demo',
+              }
+            });
+            setStoredSession(session);
+            notifyAuthListeners('SIGNED_IN', session);
+            return Promise.resolve({ data: { user: session.user, session }, error: null });
+          },
+          signOut: () => {
+            setStoredSession(null);
+            notifyAuthListeners('SIGNED_OUT', null);
+            return Promise.resolve({ error: null });
+          },
+          onAuthStateChange: (cb: any) => {
+            authListeners.add(cb);
+            return {
+              data: {
+                subscription: {
+                  unsubscribe: () => authListeners.delete(cb)
+                }
+              }
+            };
+          },
+          getSession: () => Promise.resolve({ data: { session: getStoredSession() }, error: null }),
+          getUser: () => {
+            const session = getStoredSession();
+            return Promise.resolve({ data: { user: session?.user ?? null }, error: null });
+          },
+          updateUser: (data: any) => {
+            const currentSession = getCurrentSession();
+            const updatedSession = {
+              ...currentSession,
+              user: {
+                ...currentSession.user,
+                ...data,
+              }
+            };
+            setStoredSession(updatedSession);
+            notifyAuthListeners('USER_UPDATED', updatedSession);
+            return Promise.resolve({ data: { user: updatedSession.user }, error: null });
+          },
         },
         storage: {
           from: () => ({
