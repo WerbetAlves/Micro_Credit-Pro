@@ -18,3 +18,4 @@ View your app in AI Studio: https://ai.studio/apps/7edf3f86-a679-4c7d-ac9b-d48ca
 2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
 3. Run the app:
    `npm run dev`
+![CodeRabbit Pull Request Reviews](https://img.shields.io/coderabbit/prs/github/WerbetAlves/Micro_Credit-Pro?utm_source=oss&utm_medium=github&utm_campaign=WerbetAlves%2FMicro_Credit-Pro&labelColor=171717&color=FF570A&link=https%3A%2F%2Fcoderabbit.ai&label=CodeRabbit+Reviews)
