@@ -29,7 +29,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
 
-  // 1. fetchProfile memoizado corretamente
+  // 1. fetchProfile memoizado com useCallback para evitar re-renders e loops infinitos
   const fetchProfile = useCallback(async (userId: string) => {
     try {
       const { data, error } = await supabase
@@ -64,13 +64,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       } catch (error) {
         console.error("Erro na inicialização:", error);
       } finally {
+        // Liberta a tela de loading quer tenha sucesso ou falhe
         if (mounted) setLoading(false);
       }
     }
 
     initializeAuth();
 
-    // 2. O ouvinte de estado NÃO deve depender de 'profile'
+    // 2. Ouvinte de estado reativo (não depende mais de 'profile' para não entrar em loop)
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, currentSession) => {
       if (!mounted) return;
 
@@ -89,7 +90,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setProfile(null);
       }
       
-      // Garante que o loading para após qualquer evento
+      // Garante que o loading para após qualquer evento do Supabase
       if (mounted) setLoading(false);
     });
 
@@ -97,19 +98,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       mounted = false;
       subscription.unsubscribe();
     };
-    // 🔥 IMPORTANTE: Removi 'profile' daqui para evitar o loop de refresh infinito!
-  }, [fetchProfile]); 
+  }, [fetchProfile]); // Apenas fetchProfile na dependência (seguro pois está memoizado)
 
   const signOut = async () => {
     setLoading(true);
     try {
+      // 1. Limpa os estados locais instantaneamente para que a UI reaja
       setProfile(null);
       setUser(null);
       setSession(null);
+      
+      // 2. Desloga do Supabase
       await supabase.auth.signOut();
+      
+      // 3. Limpa qualquer cache "fantasma" do navegador
       localStorage.clear();
+      
+      // 4. Redirecionamento forçado e limpo
       window.location.replace('/login');
     } catch (error) {
+      console.error('Erro no logout:', error);
       window.location.href = '/login';
     }
   };

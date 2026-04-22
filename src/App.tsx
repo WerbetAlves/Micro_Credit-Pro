@@ -13,17 +13,17 @@ import { Admin } from './pages/Admin';
 import { Login } from './pages/Login';
 import { Signup } from './pages/Signup';
 import { ProtectedRoute } from './components/ProtectedRoute';
-import { useAuth } from './contexts/AuthContext'; // 🔥 Importante
+import { useAuth } from './contexts/AuthContext';
 
 export default function App() {
-  const { loading } = useAuth(); // 🔥 Puxamos o estado de carregamento global
+  const { loading } = useAuth();
 
   useEffect(() => {
     console.log('🌐 App Origin:', window.location.origin);
   }, []);
 
   // 🛡️ TRAVA DE SEGURANÇA: Se o Auth ainda está carregando, não renderiza nenhuma rota.
-  // Isso impede que o roteador tente redirecionar você antes de saber quem você é.
+  // Isso impede que o roteador tente redirecionar antes de saber quem é o utilizador.
   if (loading) {
     return (
       <div className="min-h-screen bg-[#f8fafc] flex items-center justify-center">
@@ -125,7 +125,7 @@ export default function App() {
         <Route path="/login" element={<Login />} />
         <Route path="/signup" element={<Signup />} />
         
-        {/* Fallback */}
+        {/* Fallback - Redireciona qualquer rota inválida para o Dashboard */}
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </Router>
