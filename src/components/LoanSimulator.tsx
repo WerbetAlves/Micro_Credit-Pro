@@ -100,65 +100,84 @@ export function LoanSimulator() {
     return Math.max(diffDays, 1);
   };
 
+  const countMatchingDays = (startDate: string, endDate: string, allowedDays: string[]) => {
+    const start = parseLocalDate(startDate);
+    const end = parseLocalDate(endDate);
+    const dayNames = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'] as const;
+
+    let count = 0;
+    const cursor = new Date(start);
+
+    while (cursor <= end) {
+      const dayName = dayNames[cursor.getDay()];
+      if (allowedDays.includes(dayName)) {
+        count++;
+      }
+      cursor.setDate(cursor.getDate() + 1);
+    }
+
+    return Math.max(count, 1);
+  };
+
   const simulation = useMemo(() => {
     const numAmount = parseFloat(amount) || 0;
     const numRate = parseFloat(rate) || 0;
     const numDuration = parseInt(duration) || 1;
 
-    let totalInterest = 0;
-    let totalAmount = 0;
-    let installmentValue = 0;
+    const totalPeriodDays = diffDaysInclusive(firstInstallmentDate, firstInstallmentDueDate);
+    const monthlyRate = interestType === 'monthly' ? numRate / 100 : (numRate / 12) / 100;
+    const equivalentMonths = totalPeriodDays / 30;
+
     let installmentCount = numDuration;
 
-    const effectiveMonthlyRate = interestType === 'monthly' ? numRate / 100 : (numRate / 12) / 100;
-
-    let equivalentMonths = 0;
-    let totalTermDays = 0;
-
     if (paymentFrequency === 'monthly') {
-      equivalentMonths = numDuration;
       installmentCount = numDuration;
-      totalTermDays = numDuration * 30;
     } else if (paymentFrequency === 'daily') {
-      installmentCount = numDuration;
-      totalTermDays = numDuration;
-      equivalentMonths = totalTermDays / 30;
+      installmentCount = paymentDays.length > 0
+        ? countMatchingDays(firstInstallmentDate, firstInstallmentDueDate, paymentDays)
+        : totalPeriodDays;
     } else if (paymentFrequency === 'weekly') {
-      installmentCount = numDuration;
-      totalTermDays = numDuration * 7;
-      equivalentMonths = totalTermDays / 30;
+      installmentCount = Math.max(numDuration, 1);
     } else if (paymentFrequency === 'biweekly') {
-      installmentCount = numDuration;
-      totalTermDays = numDuration * 14;
-      equivalentMonths = totalTermDays / 30;
+      installmentCount = Math.max(numDuration, 1);
     }
 
-    totalInterest = numAmount * effectiveMonthlyRate * equivalentMonths;
-    totalAmount = numAmount + totalInterest;
-    installmentValue = installmentCount > 0 ? totalAmount / installmentCount : totalAmount;
+    const totalInterest = numAmount * monthlyRate * equivalentMonths;
+    const totalAmount = numAmount + totalInterest;
+    const installmentValue = installmentCount > 0 ? totalAmount / installmentCount : totalAmount;
 
     return {
       numAmount,
       numRate,
       numDuration,
+      totalPeriodDays,
+      equivalentMonths,
       totalInterest,
       totalAmount,
       installmentValue,
       installmentCount,
-      equivalentMonths,
-      totalTermDays,
     };
-  }, [amount, rate, duration, interestType, paymentFrequency]);
+  }, [
+    amount,
+    rate,
+    duration,
+    interestType,
+    paymentFrequency,
+    firstInstallmentDate,
+    firstInstallmentDueDate,
+    paymentDays,
+  ]);
 
   const {
     numAmount,
     numRate,
     numDuration,
-    totalTermDays,
+    totalPeriodDays,
     equivalentMonths,
     totalInterest,
     totalAmount,
     installmentValue,
+    installmentCount,
   } = simulation;
 
   const handleSaveLoan = async () => {
@@ -211,7 +230,7 @@ export function LoanSimulator() {
           category,
           notes,
           term_months: paymentFrequency === 'monthly' ? numDuration : Math.max(1, Math.ceil(equivalentMonths)),
-          term_days: totalTermDays,
+          term_days: totalPeriodDays,
           monthly_installment: installmentValue,
           total_repayment: totalAmount,
           status: 'active',
@@ -231,32 +250,63 @@ export function LoanSimulator() {
       if (loanError) throw loanError;
 
       const installments = [];
-      let currentDate = parseLocalDate(firstInstallmentDueDate);
-      let installmentsCreated = 0;
+      let currentDate = parseLocalDate(firstInstallmentDate);
+      let created = 0;
+      const dayNames = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'] as const;
 
-      while (installmentsCreated < simulation.installmentCount) {
-        let isPaymentDay = true;
-
-        if (paymentDays.length > 0 && ['daily', 'weekly', 'biweekly'].includes(paymentFrequency)) {
-          const dayName = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'][currentDate.getDay()];
-          isPaymentDay = paymentDays.includes(dayName);
-        }
-
-        if (isPaymentDay) {
+      if (paymentFrequency === 'monthly') {
+        currentDate = parseLocalDate(firstInstallmentDueDate);
+        while (created < installmentCount) {
           installments.push({
             loan_id: loan.id,
             amount: installmentValue,
             due_date: currentDate.toISOString().split('T')[0],
             status: 'upcoming'
           });
-          installmentsCreated++;
+          created++;
+          currentDate.setMonth(currentDate.getMonth() + 1);
+        }
+      } else if (paymentFrequency === 'daily') {
+        const endDate = parseLocalDate(firstInstallmentDueDate);
+        while (currentDate <= endDate && created < installmentCount) {
+          const dayName = dayNames[currentDate.getDay()];
+          const canCharge = paymentDays.length === 0 || paymentDays.includes(dayName);
 
-          if (paymentFrequency === 'monthly') currentDate.setMonth(currentDate.getMonth() + 1);
-          else if (paymentFrequency === 'biweekly') currentDate.setDate(currentDate.getDate() + 14);
-          else if (paymentFrequency === 'weekly') currentDate.setDate(currentDate.getDate() + 7);
-          else currentDate.setDate(currentDate.getDate() + 1);
-        } else {
+          if (canCharge) {
+            installments.push({
+              loan_id: loan.id,
+              amount: installmentValue,
+              due_date: currentDate.toISOString().split('T')[0],
+              status: 'upcoming'
+            });
+            created++;
+          }
+
           currentDate.setDate(currentDate.getDate() + 1);
+        }
+      } else if (paymentFrequency === 'weekly') {
+        currentDate = parseLocalDate(firstInstallmentDueDate);
+        while (created < installmentCount) {
+          installments.push({
+            loan_id: loan.id,
+            amount: installmentValue,
+            due_date: currentDate.toISOString().split('T')[0],
+            status: 'upcoming'
+          });
+          created++;
+          currentDate.setDate(currentDate.getDate() + 7);
+        }
+      } else if (paymentFrequency === 'biweekly') {
+        currentDate = parseLocalDate(firstInstallmentDueDate);
+        while (created < installmentCount) {
+          installments.push({
+            loan_id: loan.id,
+            amount: installmentValue,
+            due_date: currentDate.toISOString().split('T')[0],
+            status: 'upcoming'
+          });
+          created++;
+          currentDate.setDate(currentDate.getDate() + 14);
         }
       }
 
