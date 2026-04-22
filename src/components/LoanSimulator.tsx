@@ -10,7 +10,7 @@ import { cn } from '../lib/utils';
 export function LoanSimulator() {
   const { formatCurrency } = useLanguage();
   const { user, profile } = useAuth();
-  
+
   const [amount, setAmount] = useState('5000');
   const [rate, setRate] = useState('5');
   const [duration, setDuration] = useState('12');
@@ -23,7 +23,7 @@ export function LoanSimulator() {
   const [firstInstallmentDate, setFirstInstallmentDate] = useState(new Date().toISOString().split('T')[0]);
   const [notes, setNotes] = useState('');
   const [category, setCategory] = useState('Microcrédito');
-  
+
   const [clients, setClients] = useState<any[]>([]);
   const [selectedClientId, setSelectedClientId] = useState('');
   const [selectedWalletId, setSelectedWalletId] = useState('');
@@ -84,57 +84,83 @@ export function LoanSimulator() {
     }
   };
 
+  const getPeriodDays = (startDate: string, endDate: string) => {
+    const start = new Date(startDate);
+    const end = new Date(endDate);
+
+    start.setHours(0, 0, 0, 0);
+    end.setHours(0, 0, 0, 0);
+
+    const diffMs = end.getTime() - start.getTime();
+    const diffDays = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
+
+    return Math.max(diffDays, 1);
+  };
+
   const simulation = useMemo(() => {
     const numAmount = parseFloat(amount) || 0;
     const numRate = parseFloat(rate) || 0;
     const numDuration = parseInt(duration) || 1;
+    const periodDays = getPeriodDays(firstInstallmentDate, firstInstallmentDueDate);
+
+    const effectiveMonthlyRate = interestType === 'monthly' ? numRate / 100 : (numRate / 12) / 100;
 
     let totalInterest = 0;
     let totalAmount = 0;
     let installmentValue = 0;
-    const installmentCount = numDuration;
+    let installmentCount = numDuration;
+    let equivalentMonths = numDuration;
 
     if (paymentFrequency === 'monthly') {
-      const monthlyRate = interestType === 'monthly' ? numRate / 100 : (numRate / 12) / 100;
-      totalInterest = numAmount * monthlyRate * numDuration;
-      totalAmount = numAmount + totalInterest;
-      installmentValue = totalAmount / numDuration;
-    } else if (paymentFrequency === 'daily') {
-      const dailyRate = (interestType === 'monthly' ? numRate : numRate / 12) / 30 / 100;
-      totalInterest = numAmount * dailyRate * numDuration;
-      totalAmount = numAmount + totalInterest;
-      installmentValue = totalAmount / numDuration;
-    } else if (paymentFrequency === 'weekly') {
-      const weeklyRate = (interestType === 'monthly' ? numRate : numRate / 12) / 4 / 100;
-      totalInterest = numAmount * weeklyRate * numDuration;
-      totalAmount = numAmount + totalInterest;
-      installmentValue = totalAmount / numDuration;
-    } else if (paymentFrequency === 'biweekly') {
-      const biweeklyRate = (interestType === 'monthly' ? numRate : numRate / 12) / 2 / 100;
-      totalInterest = numAmount * biweeklyRate * numDuration;
-      totalAmount = numAmount + totalInterest;
-      installmentValue = totalAmount / numDuration;
+      equivalentMonths = numDuration;
+      installmentCount = numDuration;
+    } else {
+      equivalentMonths = periodDays / 30;
+      installmentCount = numDuration;
     }
+
+    totalInterest = numAmount * effectiveMonthlyRate * equivalentMonths;
+    totalAmount = numAmount + totalInterest;
+    installmentValue = installmentCount > 0 ? totalAmount / installmentCount : totalAmount;
 
     return {
       numAmount,
       numRate,
       numDuration,
+      periodDays,
+      equivalentMonths,
       totalInterest,
       totalAmount,
       installmentValue,
       installmentCount,
     };
-  }, [amount, rate, duration, interestType, paymentFrequency]);
+  }, [
+    amount,
+    rate,
+    duration,
+    interestType,
+    paymentFrequency,
+    firstInstallmentDate,
+    firstInstallmentDueDate,
+  ]);
 
-  const { numAmount, numRate, totalInterest, totalAmount, installmentValue, numDuration } = simulation;
+  const {
+    numAmount,
+    numRate,
+    numDuration,
+    periodDays,
+    equivalentMonths,
+    totalInterest,
+    totalAmount,
+    installmentValue,
+  } = simulation;
 
   const handleSaveLoan = async () => {
     if (!user || !selectedClientId) {
       alert('Por favor, selecione um cliente para vincular o empréstimo.');
       return;
     }
-    
+
     setIsSaving(true);
 
     try {
@@ -151,7 +177,7 @@ export function LoanSimulator() {
           principal_amount: numAmount,
           interest_rate: numRate,
           interest_type: interestType,
-          term_months: numDuration,
+          term_months: Math.max(1, Math.ceil(equivalentMonths)),
           monthly_installment: installmentValue,
           total_repayment: totalAmount,
           payment_frequency: paymentFrequency,
@@ -178,12 +204,8 @@ export function LoanSimulator() {
           due_date: firstInstallmentDueDate,
           category,
           notes,
-          term_months: paymentFrequency === 'monthly' ? numDuration : Math.ceil(numDuration / 30),
-          term_days: paymentFrequency === 'daily'
-            ? numDuration
-            : paymentFrequency === 'weekly'
-              ? numDuration * 7
-              : numDuration * 14,
+          term_months: paymentFrequency === 'monthly' ? numDuration : Math.max(1, Math.ceil(equivalentMonths)),
+          term_days: periodDays,
           monthly_installment: installmentValue,
           total_repayment: totalAmount,
           status: 'active',
@@ -208,7 +230,7 @@ export function LoanSimulator() {
 
       while (installmentsCreated < simulation.installmentCount) {
         let isPaymentDay = true;
-        
+
         if (paymentDays.length > 0 && ['daily', 'weekly', 'biweekly'].includes(paymentFrequency)) {
           const dayName = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'][currentDate.getDay()];
           isPaymentDay = paymentDays.includes(dayName);
