@@ -19,7 +19,7 @@ interface WalletType {
 }
 
 export function LoanSimulator() {
-  const { formatCurrency, t } = useLanguage();
+  const { formatCurrency } = useLanguage();
   const { user, profile } = useAuth();
   
   // --- Estados do Simulador ---
@@ -32,7 +32,7 @@ export function LoanSimulator() {
     new Date(new Date().setMonth(new Date().getMonth() + 1)).toISOString().split('T')[0]
   );
   
-  // 🔥 Funcionalidades Avançadas Restauradas
+  // --- Funcionalidades Avançadas ---
   const [category, setCategory] = useState('Microcrédito');
   const [notes, setNotes] = useState('');
   const [paymentDays, setPaymentDays] = useState<string[]>(['monday', 'tuesday', 'wednesday', 'thursday', 'friday']);
@@ -87,7 +87,7 @@ export function LoanSimulator() {
     }
   };
 
-  // 🔥 LÓGICA FINANCEIRA "TOP" (Juro Real Simples Fixo)
+  // --- LÓGICA FINANCEIRA ---
   const simulation = useMemo(() => {
     const principal = parseFloat(amount) || 0;
     const rateVal = parseFloat(rate) || 0;
@@ -121,7 +121,7 @@ export function LoanSimulator() {
     try {
       const { data: clientData } = await supabase.from('clients').select('*').eq('id', selectedClientId).single();
 
-      // 1. Criar Empréstimo com todos os campos avançados e Contrato IA
+      // 1. Criar Empréstimo
       const { data: loan, error: loanError } = await supabase.from('loans').insert([{
         user_id: user.id,
         client_id: selectedClientId,
@@ -155,40 +155,64 @@ export function LoanSimulator() {
 
       if (loanError) throw loanError;
 
-      // 2. Gerar Parcelas baseadas nos dias úteis/selecionados
+      // 2. Gerar Parcelas Inteligentes (Respeitando os dias da semana)
       const installments = [];
       let currentDate = new Date(firstInstallmentDueDate);
-      
-      for (let i = 0; i < simulation.installmentCount; i++) {
-        installments.push({
-          loan_id: loan.id,
-          amount: simulation.installmentValue,
-          due_date: currentDate.toISOString().split('T')[0],
-          status: 'upcoming'
-        });
+      let installmentsCreated = 0;
 
-        // Avanço de Datas
+      while (installmentsCreated < simulation.installmentCount) {
+        let isPaymentDay = true;
+        
+        // Verifica se é dia útil baseado na seleção do usuário (Apenas para pagamentos Diários)
+        if (paymentFrequency === 'daily' && paymentDays.length > 0) {
+          const dayName = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'][currentDate.getDay()];
+          isPaymentDay = paymentDays.includes(dayName);
+        }
+
+        if (isPaymentDay) {
+          installments.push({
+            loan_id: loan.id,
+            amount: simulation.installmentValue,
+            due_date: currentDate.toISOString().split('T')[0],
+            status: 'upcoming'
+          });
+          installmentsCreated++;
+        }
+
+        // Avanço Dinâmico de Datas
         if (paymentFrequency === 'monthly') currentDate.setMonth(currentDate.getMonth() + 1);
-        else if (paymentFrequency === 'daily') currentDate.setDate(currentDate.getDate() + 1);
+        else if (paymentFrequency === 'biweekly') currentDate.setDate(currentDate.getDate() + 15);
         else if (paymentFrequency === 'weekly') currentDate.setDate(currentDate.getDate() + 7);
-        else currentDate.setDate(currentDate.getDate() + 15);
+        else currentDate.setDate(currentDate.getDate() + 1); // Diário avança 1 a 1 para o while checar os finais de semana
       }
+
       await supabase.from('installments').insert(installments);
 
-      // 3. Registrar Saída Financeira na Carteira Selecionada
+      // 3. Registrar Saída Financeira na Transação
+      const loanAmount = parseFloat(amount);
       await supabase.from('transactions').insert([{
         user_id: user.id,
         wallet_id: selectedWalletId,
         type: 'expense',
         category: 'loan_disbursement',
-        amount: parseFloat(amount),
+        amount: loanAmount,
         description: `Empréstimo Liberado: ${clientData?.full_name}`
       }]);
+
+      // 4. CORREÇÃO: Deduzir o valor da Carteira
+      const currentWallet = wallets.find(w => w.id === selectedWalletId);
+      if (currentWallet) {
+        const newBalance = currentWallet.balance - loanAmount;
+        await supabase.from('wallets').update({ balance: newBalance }).eq('id', selectedWalletId);
+        
+        // Atualiza o estado local para refletir na UI sem precisar recarregar
+        setWallets(prev => prev.map(w => w.id === selectedWalletId ? { ...w, balance: newBalance } : w));
+      }
 
       setShowSuccess(true);
       setTimeout(() => setShowSuccess(false), 4000);
       setSelectedClientId('');
-      setNotes(''); // Limpa as notas
+      setNotes('');
     } catch (error: any) {
       alert("Erro ao gravar: " + error.message);
     } finally {
@@ -332,7 +356,7 @@ export function LoanSimulator() {
         </div>
       </div>
 
-      {/* Lado Direito: Preview Dark (O "Mágico") */}
+      {/* Lado Direito: Preview Dark */}
       <div className="flex-[0.7] bg-slate-900 p-8 lg:p-12 text-white flex flex-col justify-between relative overflow-hidden">
         <Calculator className="absolute -bottom-10 -right-10 size-64 opacity-5 rotate-12 pointer-events-none" />
         
