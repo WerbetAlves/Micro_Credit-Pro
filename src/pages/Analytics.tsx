@@ -4,19 +4,39 @@ import { useLanguage } from '../contexts/LanguageContext';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../lib/supabase';
 import { motion } from 'motion/react';
-import { 
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, 
-  PieChart, Pie, Cell, LineChart, Line, Legend, AreaChart, Area 
+import {
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
+  PieChart, Pie, Cell,
 } from 'recharts';
-import { 
-  TrendingUp, TrendingDown, BrainCircuit, Activity, 
+import {
+  TrendingUp, BrainCircuit, Activity,
   Target, ShieldAlert, Zap, Layers, Landmark, Sparkles,
-  ArrowRight
 } from 'lucide-react';
-import { GoogleGenAI } from "@google/genai";
+import { GoogleGenAI } from '@google/genai';
 import { cn } from '../lib/utils';
 
 const COLORS = ['#10b981', '#f43f5e', '#f59e0b', '#3b82f6', '#8b5cf6'];
+
+type AnalyticsLoan = {
+  created_at: string;
+  principal_amount: number;
+  status: string;
+};
+
+type AnalyticsInstallment = {
+  amount: number;
+  status: 'upcoming' | 'paid' | 'late' | 'missed';
+};
+
+type StatusDistributionItem = {
+  name: string;
+  value: number;
+};
+
+type MonthlyVolumeItem = {
+  month: string;
+  amount: number;
+};
 
 export function Analytics() {
   const { t, formatCurrency } = useLanguage();
@@ -31,8 +51,8 @@ export function Analytics() {
     delinquencyRate: 0,
     expectedRevenue: 0,
     growthRate: 0,
-    statusDistribution: [] as any[],
-    monthlyVolume: [] as any[],
+    statusDistribution: [] as StatusDistributionItem[],
+    monthlyVolume: [] as MonthlyVolumeItem[],
   });
 
   useEffect(() => {
@@ -44,15 +64,15 @@ export function Analytics() {
   async function fetchAnalyticsData() {
     setLoading(true);
     try {
-      // 1. Fetch Loans & Status Distribution
+      if (!user) return;
+
       const { data: loans, error: loansError } = await supabase
         .from('loans')
         .select('*')
         .eq('user_id', user.id);
-      
+
       if (loansError) throw loansError;
 
-      // 2. Fetch Installments for Delinquency
       const { data: installments, error: instError } = await supabase
         .from('installments')
         .select('*, loans!inner(user_id)')
@@ -60,40 +80,40 @@ export function Analytics() {
 
       if (instError) throw instError;
 
-      // Calculations
-      const totalPortfolio = loans.reduce((acc, l) => acc + Number(l.principal_amount), 0);
-      
-      const lateAmount = installments
-        .filter(i => i.status === 'late' || i.status === 'missed')
-        .reduce((acc, i) => acc + Number(i.amount), 0);
-      
-      const totalUpcomingAmount = installments
-        .reduce((acc, i) => acc + Number(i.amount), 0);
+      const safeLoans = (loans || []) as AnalyticsLoan[];
+      const safeInstallments = (installments || []) as AnalyticsInstallment[];
 
-      const delinquencyRate = totalUpcomingAmount > 0 
-        ? (lateAmount / totalUpcomingAmount) * 100 
+      const totalPortfolio = safeLoans.reduce((acc, l) => acc + Number(l.principal_amount), 0);
+
+      const lateAmount = safeInstallments
+        .filter((installment) => installment.status === 'late' || installment.status === 'missed')
+        .reduce((acc, installment) => acc + Number(installment.amount), 0);
+
+      const totalUpcomingAmount = safeInstallments
+        .reduce((acc, installment) => acc + Number(installment.amount), 0);
+
+      const delinquencyRate = totalUpcomingAmount > 0
+        ? (lateAmount / totalUpcomingAmount) * 100
         : 0;
 
-      const expectedRevenue = installments
-        .filter(i => i.status === 'upcoming' || i.status === 'late')
-        .reduce((acc, i) => acc + Number(i.amount), 0);
+      const expectedRevenue = safeInstallments
+        .filter((installment) => installment.status === 'upcoming' || installment.status === 'late')
+        .reduce((acc, installment) => acc + Number(installment.amount), 0);
 
-      // Status Distribution
-      const statusCounts = loans.reduce((acc: any, l) => {
-        acc[l.status] = (acc[l.status] || 0) + 1;
+      const statusCounts = safeLoans.reduce((acc: Record<string, number>, loan) => {
+        acc[loan.status] = (acc[loan.status] || 0) + 1;
         return acc;
       }, {});
 
       const statusDistribution = Object.entries(statusCounts).map(([name, value]) => ({
         name: t[name as keyof typeof t] || name,
-        value
+        value,
       }));
 
-      // Monthly Volume (Mocking grouping for now, ideally aggregation query)
-      const monthlyData = loans.reduce((acc: any, l) => {
-        const month = new Date(l.created_at).toLocaleDateString([], { month: 'short' });
+      const monthlyData = safeLoans.reduce((acc: Record<string, MonthlyVolumeItem>, loan) => {
+        const month = new Date(loan.created_at).toLocaleDateString([], { month: 'short' });
         if (!acc[month]) acc[month] = { month, amount: 0 };
-        acc[month].amount += Number(l.principal_amount);
+        acc[month].amount += Number(loan.principal_amount);
         return acc;
       }, {});
 
@@ -101,11 +121,10 @@ export function Analytics() {
         totalPortfolio,
         delinquencyRate,
         expectedRevenue,
-        growthRate: 12.5, // Mock value
+        growthRate: 12.5,
         statusDistribution,
         monthlyVolume: Object.values(monthlyData),
       });
-
     } catch (err: any) {
       console.error('Analytics Fetch Error:', err.message);
     } finally {
@@ -116,35 +135,40 @@ export function Analytics() {
   async function generateAIInsights() {
     setAiLoading(true);
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-      
+      const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
+      if (!apiKey) {
+        throw new Error('Chave VITE_GEMINI_API_KEY não configurada.');
+      }
+
+      const ai = new GoogleGenAI({ apiKey });
+
       const prompt = `
         Aja como um consultor estratégico de elite para uma empresa de microcrédito (Emerald Micro-Credit).
         Analise os seguintes dados do negócio e forneça 3 recomendações estratégicas curtas e acionáveis.
-        
+
         Dados Atuais:
         - Carteira Total: ${formatCurrency(stats.totalPortfolio)}
         - Taxa de Inadimplência: ${stats.delinquencyRate.toFixed(2)}%
         - Receita Esperada: ${formatCurrency(stats.expectedRevenue)}
         - Distribuição de Status: ${JSON.stringify(stats.statusDistribution)}
-        
+
         Responda em Português no seguinte formato:
         1. [Título curto] - [Explicação]
         2. [Título curto] - [Explicação]
         3. [Título curto] - [Explicação]
-        
+
         Mantenha o tom profissional e focado em lucro e mitigação de risco.
       `;
 
       const response = await ai.models.generateContent({
-        model: "gemini-3-flash-preview",
+        model: 'gemini-3-flash-preview',
         contents: prompt,
       });
 
-      setAiInsight(response.text);
+      setAiInsight(response.text ?? 'Nenhum insight foi retornado pela IA.');
     } catch (err: any) {
       console.error('Gemini Error:', err.message);
-      setAiInsight("Desculpe, não conseguimos conectar com o consultor de IA agora. Verifique sua chave de API.");
+      setAiInsight('Desculpe, não conseguimos conectar com o consultor de IA agora. Verifique sua chave de API.');
     } finally {
       setAiLoading(false);
     }
@@ -165,9 +189,7 @@ export function Analytics() {
         </header>
 
         <div className="px-4 lg:px-8 py-8 w-full space-y-8">
-          
-          {/* AI Consultant Hero */}
-          <motion.div 
+          <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             className="relative overflow-hidden bg-white border border-slate-100 rounded-[2.5rem] p-8 lg:p-10 shadow-sm"
@@ -184,7 +206,7 @@ export function Analytics() {
                 <p className="text-slate-500 font-medium mb-8 max-w-md">
                   Nossa inteligência analisa sua carteira em tempo real para identificar riscos ocultos e oportunidades de escala.
                 </p>
-                <button 
+                <button
                   onClick={generateAIInsights}
                   disabled={aiLoading}
                   className="group flex items-center gap-3 bg-slate-900 text-white px-8 py-4 rounded-2xl font-bold text-sm tracking-tight hover:bg-slate-800 transition-all active:scale-95 disabled:opacity-50"
@@ -194,7 +216,7 @@ export function Analytics() {
                   ) : (
                     <Sparkles className="size-4 text-emerald-400 group-hover:rotate-12 transition-transform" />
                   )}
-                  {aiLoading ? "Consultando Mentoria..." : "Gerar Insights de Negócio"}
+                  {aiLoading ? 'Consultando Mentoria...' : 'Gerar Insights de Negócio'}
                 </button>
               </div>
 
@@ -219,15 +241,14 @@ export function Analytics() {
             </div>
           </motion.div>
 
-          {/* Strategic KPIs */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
             {[
               { label: 'Yield on Capital', value: '18.4%', icon: TrendingUp, color: 'text-emerald-500' },
-              { label: 'Overdue Risk', value: formatCurrency(stats.totalPortfolio * (stats.delinquencyRate/100)), icon: ShieldAlert, color: 'text-rose-500' },
+              { label: 'Overdue Risk', value: formatCurrency(stats.totalPortfolio * (stats.delinquencyRate / 100)), icon: ShieldAlert, color: 'text-rose-500' },
               { label: 'Account Health', value: '94.2/100', icon: Activity, color: 'text-indigo-500' },
               { label: 'Capital Velocity', value: 'x1.4', icon: Zap, color: 'text-amber-500' },
             ].map((kpi, i) => (
-              <motion.div 
+              <motion.div
                 key={kpi.label}
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
@@ -235,9 +256,9 @@ export function Analytics() {
                 className="bg-white p-6 rounded-3xl border border-slate-50 shadow-sm"
               >
                 <div className="flex items-center justify-between mb-4">
-                   <div className="p-2 bg-slate-50 rounded-xl">
-                      <kpi.icon className={cn("size-5", kpi.color)} />
-                   </div>
+                  <div className="p-2 bg-slate-50 rounded-xl">
+                    <kpi.icon className={cn('size-5', kpi.color)} />
+                  </div>
                 </div>
                 <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">{kpi.label}</p>
                 <p className="text-2xl font-black text-slate-900 tracking-tighter">{kpi.value}</p>
@@ -245,7 +266,6 @@ export function Analytics() {
             ))}
           </div>
 
-          {/* Charts Grid */}
           <div className="grid lg:grid-cols-3 gap-6">
             <div className="lg:col-span-2 bg-white rounded-[2.5rem] p-8 border border-slate-50 shadow-sm">
               <h3 className="text-lg font-black text-slate-900 mb-8 uppercase tracking-tight flex items-center gap-2">
@@ -256,19 +276,19 @@ export function Analytics() {
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart data={stats.monthlyVolume}>
                     <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                    <XAxis 
-                      dataKey="month" 
-                      axisLine={false} 
-                      tickLine={false} 
-                      tick={{ fontSize: 10, fontWeight: 'bold', fill: '#94a3b8' }} 
-                    />
-                    <YAxis 
-                      axisLine={false} 
-                      tickLine={false} 
+                    <XAxis
+                      dataKey="month"
+                      axisLine={false}
+                      tickLine={false}
                       tick={{ fontSize: 10, fontWeight: 'bold', fill: '#94a3b8' }}
-                      tickFormatter={(val) => `R$${val/1000}k`}
                     />
-                    <Tooltip 
+                    <YAxis
+                      axisLine={false}
+                      tickLine={false}
+                      tick={{ fontSize: 10, fontWeight: 'bold', fill: '#94a3b8' }}
+                      tickFormatter={(val) => `R$${val / 1000}k`}
+                    />
+                    <Tooltip
                       contentStyle={{ borderRadius: '1rem', border: 'none', boxShadow: '0 10px 15px -1px rgb(0 0 0 / 0.1)' }}
                       cursor={{ fill: '#f8fafc' }}
                     />
@@ -301,19 +321,18 @@ export function Analytics() {
                 </ResponsiveContainer>
               </div>
               <div className="space-y-3 mt-4">
-                 {stats.statusDistribution.map((entry, index) => (
-                   <div key={entry.name} className="flex items-center justify-between text-xs">
-                      <div className="flex items-center gap-2">
-                         <div className="size-2 rounded-full" style={{ backgroundColor: COLORS[index % COLORS.length] }} />
-                         <span className="text-slate-400 font-bold uppercase tracking-widest">{entry.name}</span>
-                      </div>
-                      <span className="font-black">{entry.value} loans</span>
-                   </div>
-                 ))}
+                {stats.statusDistribution.map((entry, index) => (
+                  <div key={entry.name} className="flex items-center justify-between text-xs">
+                    <div className="flex items-center gap-2">
+                      <div className="size-2 rounded-full" style={{ backgroundColor: COLORS[index % COLORS.length] }} />
+                      <span className="text-slate-400 font-bold uppercase tracking-widest">{entry.name}</span>
+                    </div>
+                    <span className="font-black">{entry.value} loans</span>
+                  </div>
+                ))}
               </div>
             </div>
           </div>
-
         </div>
       </main>
     </div>
