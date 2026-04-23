@@ -329,10 +329,10 @@ export function AIAssistantDashboard() {
         ]);
       }
     } catch (err: any) {
-      console.error('OpenAI Error:', err.message);
+      console.error('AI Error:', err.message);
       const friendlyMessage = err.message?.includes('OPENAI_API_KEY')
-        ? 'A IA ainda não foi configurada no backend. Adicione a chave OPENAI_API_KEY no .env.'
-        : 'Houve um erro técnico ao consultar a inteligência. Verifique a configuração do backend, a OPENAI_API_KEY e a tabela support_tickets no Supabase.';
+        ? 'A IA ainda não foi configurada no backend. Crie o arquivo `.env` na raiz do projeto e adicione `OPENAI_API_KEY=sua_chave_aqui`. Depois reinicie o servidor.'
+        : `Houve um erro técnico ao consultar a inteligência. Detalhe: ${err.message || 'erro desconhecido'}`;
       setMessages((prev) => [...prev, { role: 'assistant', content: friendlyMessage }]);
     } finally {
       setLoading(false);
@@ -471,7 +471,7 @@ export function AIAssistantDashboard() {
                   </button>
                 </form>
                 <p className="text-[10px] text-center text-slate-400 font-bold uppercase tracking-widest mt-4">
-                  Powered by OpenAI
+                  Powered by OpenAI + Gemini
                 </p>
               </div>
             </motion.div>

@@ -1,4 +1,4 @@
-const extractText = (output = []) => {
+const extractOpenAiText = (output = []) => {
   return output
     .filter((item) => item.type === 'message')
     .flatMap((item) => item.content || [])
@@ -8,13 +8,13 @@ const extractText = (output = []) => {
     .trim();
 };
 
-const formatMessageContent = (message) => {
+const formatOpenAiMessageContent = (message) => {
   const contentType = message.role === 'assistant' ? 'output_text' : 'input_text';
 
   return [{ type: contentType, text: message.content }];
 };
 
-const buildPayload = (body, env) => {
+const buildOpenAiPayload = (body, env) => {
   const payload = {
     model: env.OPENAI_MODEL || 'gpt-4.1-mini',
   };
@@ -31,7 +31,7 @@ const buildPayload = (body, env) => {
     payload.input = [
       ...(body.messages || []).map((message) => ({
         role: message.role,
-        content: formatMessageContent(message),
+        content: formatOpenAiMessageContent(message),
       })),
       {
         role: 'user',
@@ -63,6 +63,170 @@ const buildPayload = (body, env) => {
   return payload;
 };
 
+const extractGeminiText = (data) => {
+  return (data.candidates || [])
+    .flatMap((candidate) => candidate.content?.parts || [])
+    .map((part) => part.text || '')
+    .join('\n')
+    .trim();
+};
+
+const extractGeminiFunctionCall = (data) => {
+  return (data.candidates || [])
+    .flatMap((candidate) => candidate.content?.parts || [])
+    .find((part) => part.functionCall)?.functionCall;
+};
+
+const buildGeminiContents = (body) => {
+  if (body.mode === 'text') {
+    return [{ role: 'user', parts: [{ text: body.prompt || '' }] }];
+  }
+
+  if (body.mode === 'tool_result') {
+    return [
+      {
+        role: 'user',
+        parts: [
+          {
+            text: `Resultado da acao executada no sistema: ${body.toolResult}. Responda ao usuario de forma curta, clara e em Portugues-BR.`,
+          },
+        ],
+      },
+    ];
+  }
+
+  return [
+    ...(body.messages || []).map((message) => ({
+      role: message.role === 'assistant' ? 'model' : 'user',
+      parts: [{ text: message.content || '' }],
+    })),
+    {
+      role: 'user',
+      parts: [{ text: body.userMessage || '' }],
+    },
+  ];
+};
+
+const callGemini = async (body, env, reason = 'fallback') => {
+  const apiKey = env.GEMINI_API_KEY || env.GOOGLE_API_KEY;
+
+  if (!apiKey) {
+    throw new Error('OpenAI falhou e GEMINI_API_KEY nao esta configurada no backend.');
+  }
+
+  const model = env.GEMINI_MODEL || 'gemini-2.5-flash';
+  const response = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-goog-api-key': apiKey,
+      },
+      body: JSON.stringify({
+        systemInstruction: body.systemInstruction ? { parts: [{ text: body.systemInstruction }] } : undefined,
+        contents: buildGeminiContents(body),
+        tools: body.mode === 'message' && body.tools?.length
+          ? [
+              {
+                functionDeclarations: body.tools.map((tool) => ({
+                  name: tool.name,
+                  description: tool.description,
+                  parameters: tool.parameters,
+                })),
+              },
+            ]
+          : undefined,
+      }),
+    }
+  );
+
+  const rawText = await response.text();
+  const data = rawText ? JSON.parse(rawText) : {};
+
+  if (!response.ok) {
+    throw new Error(data?.error?.message || 'Falha ao consultar o Gemini.');
+  }
+
+  const functionCall = extractGeminiFunctionCall(data);
+
+  if (functionCall) {
+    return {
+      type: 'function_call',
+      responseId: `gemini-${Date.now()}-${reason}`,
+      functionCall: {
+        id: `gemini-call-${Date.now()}`,
+        name: functionCall.name,
+        args: functionCall.args || {},
+      },
+    };
+  }
+
+  return {
+    type: body.mode === 'text' ? 'text' : 'message',
+    responseId: `gemini-${Date.now()}-${reason}`,
+    text: extractGeminiText(data) || 'Nao houve resposta da IA.',
+  };
+};
+
+const callOpenAi = async (body, env) => {
+  const apiKey = env.OPENAI_API_KEY;
+
+  if (!apiKey) {
+    throw new Error('OPENAI_API_KEY nao configurada no Vercel.');
+  }
+
+  const response = await fetch('https://api.openai.com/v1/responses', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify(buildOpenAiPayload(body, env)),
+  });
+
+  const rawText = await response.text();
+  const data = rawText ? JSON.parse(rawText) : {};
+
+  if (!response.ok) {
+    const error = new Error(data?.error?.message || 'Falha ao consultar a OpenAI.');
+    error.status = response.status;
+    throw error;
+  }
+
+  const functionCall = (data.output || []).find((item) => item.type === 'function_call');
+
+  if (functionCall) {
+    let parsedArgs = {};
+
+    try {
+      parsedArgs = functionCall.arguments ? JSON.parse(functionCall.arguments) : {};
+    } catch {
+      parsedArgs = {};
+    }
+
+    return {
+      type: 'function_call',
+      responseId: data.id,
+      functionCall: {
+        id: functionCall.call_id || functionCall.id,
+        name: functionCall.name,
+        args: parsedArgs,
+      },
+    };
+  }
+
+  return {
+    type: body.mode === 'text' ? 'text' : 'message',
+    responseId: data.id,
+    text: data.output_text?.trim() || extractOpenAiText(data.output || []) || 'Nao houve resposta da IA.',
+  };
+};
+
+const shouldFallbackToGemini = (error) => {
+  return [402, 403, 429].includes(error.status) || error.message?.toLowerCase().includes('quota');
+};
+
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
     res.status(405).json({ error: 'Method not allowed' });
@@ -70,63 +234,16 @@ export default async function handler(req, res) {
   }
 
   try {
-    const apiKey = process.env.OPENAI_API_KEY;
-
-    if (!apiKey) {
-      res.status(500).json({ error: 'OPENAI_API_KEY nao configurada no Vercel.' });
-      return;
-    }
-
     const body = typeof req.body === 'string' ? JSON.parse(req.body || '{}') : req.body || {};
-    const payload = buildPayload(body, process.env);
-
-    const openAiResponse = await fetch('https://api.openai.com/v1/responses', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify(payload),
-    });
-
-    const rawText = await openAiResponse.text();
-    const data = rawText ? JSON.parse(rawText) : {};
-
-    if (!openAiResponse.ok) {
-      res.status(openAiResponse.status).json({
-        error: data?.error?.message || 'Falha ao consultar a OpenAI.',
-      });
-      return;
-    }
-
-    const functionCall = (data.output || []).find((item) => item.type === 'function_call');
-
-    if (functionCall) {
-      let parsedArgs = {};
-
-      try {
-        parsedArgs = functionCall.arguments ? JSON.parse(functionCall.arguments) : {};
-      } catch {
-        parsedArgs = {};
+    const aiResponse = await callOpenAi(body, process.env).catch((error) => {
+      if (shouldFallbackToGemini(error)) {
+        return callGemini(body, process.env, 'openai-quota');
       }
 
-      res.status(200).json({
-        type: 'function_call',
-        responseId: data.id,
-        functionCall: {
-          id: functionCall.call_id || functionCall.id,
-          name: functionCall.name,
-          args: parsedArgs,
-        },
-      });
-      return;
-    }
-
-    res.status(200).json({
-      type: body.mode === 'text' ? 'text' : 'message',
-      responseId: data.id,
-      text: data.output_text?.trim() || extractText(data.output || []) || 'Nao houve resposta da IA.',
+      throw error;
     });
+
+    res.status(200).json(aiResponse);
   } catch (error) {
     res.status(500).json({
       error: error.message || 'Falha ao processar a requisicao da IA.',
