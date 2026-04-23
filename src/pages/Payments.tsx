@@ -183,6 +183,7 @@ export function Payments() {
       await supabase.from('transactions').insert({
         user_id: user.id,
         client_id: loan?.client_id,
+        loan_id: loan?.id,
         wallet_id: selectedWalletId === 'default' ? null : selectedWalletId,
         type: 'income',
         category: 'payment_received',
