@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, ReactNode } from 'react';
 import { locales, LocaleType, DictionaryType } from '../lib/translations';
+import { parseAppDate } from '../lib/date';
 
 interface LanguageContextType {
   language: LocaleType;
@@ -24,11 +25,9 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
   };
 
   const formatDate = (dateStr: string) => {
-    // Current format is "Oct 24, 2023"
-    // For PT, let's just use the locale string if possible or manual conversion
-    const date = new Date(dateStr);
+    const date = parseAppDate(dateStr);
     if (isNaN(date.getTime())) return dateStr;
-    
+
     return new Intl.DateTimeFormat(language === 'pt' ? 'pt-BR' : 'en-US', {
       day: '2-digit',
       month: '2-digit',

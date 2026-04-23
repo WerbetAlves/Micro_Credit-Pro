@@ -1,9 +1,9 @@
 import { useState, useEffect } from 'react';
-import {MessageSquare, ChevronRight} from 'lucide-react';
-import {cn} from '@/src/lib/utils';
+import { MessageSquare, ChevronRight } from 'lucide-react';
 import { useLanguage } from '../contexts/LanguageContext';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
+import { parseAppDate } from '../lib/date';
 
 interface CollectionItem {
   id: string;
@@ -25,6 +25,7 @@ export function UpcomingCollections() {
 
   async function fetchUpcomingCollections() {
     if (!user) return;
+
     try {
       const { data, error } = await supabase
         .from('installments')
@@ -46,15 +47,18 @@ export function UpcomingCollections() {
 
       if (error) throw error;
 
-      const formatted = (data || [])
+      const formatted: CollectionItem[] = (data || [])
         .filter((i: any) => i.loans?.user_id === user.id)
         .map((i: any) => ({
           id: i.id,
           name: i.loans?.clients?.full_name || 'Unknown',
           date: i.due_date,
           amount: i.amount,
-          phone: i.loans?.clients?.phone || ''
-        }));
+          phone: i.loans?.clients?.phone || '',
+        }))
+        .sort((a: CollectionItem, b: CollectionItem) => (
+          parseAppDate(a.date).getTime() - parseAppDate(b.date).getTime()
+        ));
 
       setCollections(formatted);
     } catch (err: any) {
@@ -69,12 +73,12 @@ export function UpcomingCollections() {
     const formattedDate = formatDate(date);
     const message = t.waMessage
       .replace('{name}', name)
-      .replace('{nome}', name) // handling both just in case
+      .replace('{nome}', name)
       .replace('{amount}', formattedAmount)
       .replace('{valor}', formattedAmount)
       .replace('{date}', formattedDate)
       .replace('{data}', formattedDate);
-      
+
     return `https://wa.me/${phone}?text=${encodeURIComponent(message)}`;
   };
 
@@ -86,9 +90,8 @@ export function UpcomingCollections() {
           {t.viewAll} <ChevronRight className="size-3" />
         </button>
       </div>
-      
+
       <div className="px-6 lg:px-8 pb-6 lg:pb-8 overflow-hidden">
-        {/* Mobile View: Cards */}
         <div className="lg:hidden space-y-4">
           {collections.map((item) => (
             <div key={item.id} className="p-5 bg-slate-50/50 rounded-2xl space-y-4">
@@ -104,7 +107,7 @@ export function UpcomingCollections() {
                 </div>
                 <p className="text-sm font-black text-slate-900">{formatCurrency(item.amount)}</p>
               </div>
-              
+
               <a
                 href={getWhatsAppLink(item.name, item.amount, item.date, item.phone)}
                 target="_blank"
@@ -118,7 +121,6 @@ export function UpcomingCollections() {
           ))}
         </div>
 
-        {/* Desktop View: Table */}
         <div className="hidden lg:block overflow-x-auto">
           <table className="w-full text-left">
             <thead>
@@ -158,6 +160,12 @@ export function UpcomingCollections() {
             </tbody>
           </table>
         </div>
+
+        {loading && (
+          <div className="pt-4 text-center text-xs font-bold uppercase tracking-widest text-slate-400">
+            Carregando...
+          </div>
+        )}
       </div>
     </section>
   );

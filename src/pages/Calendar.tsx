@@ -15,12 +15,12 @@ import {
   endOfWeek, 
   isSameMonth, 
   isSameDay, 
-  addDays, 
   eachDayOfInterval 
 } from 'date-fns';
 import { ptBR, enUS } from 'date-fns/locale';
 import { cn } from '../lib/utils';
-import { motion, AnimatePresence } from 'motion/react';
+import { motion } from 'motion/react';
+import { parseAppDate } from '../lib/date';
 
 export function Calendar() {
   const { t, formatCurrency, language } = useLanguage();
@@ -57,7 +57,7 @@ export function Calendar() {
   const calendarDays = eachDayOfInterval({ start: startDate, end: endDate });
 
   const getDayInstallments = (day: Date) => {
-    return installments.filter(inst => isSameDay(new Date(inst.due_date), day));
+    return installments.filter(inst => isSameDay(parseAppDate(inst.due_date), day));
   };
 
   const handleDayClick = (day: Date) => {
@@ -75,8 +75,6 @@ export function Calendar() {
 
         <div className="px-4 lg:px-8 py-8 w-full max-w-[1600px] mx-auto space-y-8">
           <div className="grid grid-cols-1 xl:grid-cols-3 gap-8">
-            
-            {/* Calendar Grid */}
             <div className="xl:col-span-2 bg-white rounded-[2.5rem] border border-slate-50 shadow-sm p-6 lg:p-10">
               <div className="flex items-center justify-between mb-10">
                 <div>
@@ -100,7 +98,6 @@ export function Calendar() {
                 </div>
               </div>
 
-              {/* Days Header */}
               <div className="grid grid-cols-7 mb-4">
                 {['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sab'].map(d => (
                   <div key={d} className="text-center text-[10px] font-black uppercase tracking-widest text-slate-400 py-3">
@@ -109,7 +106,6 @@ export function Calendar() {
                 ))}
               </div>
 
-              {/* Grid Days */}
               <div className="grid grid-cols-7 gap-px bg-slate-100 border border-slate-100 rounded-3xl overflow-hidden shadow-inner">
                 {calendarDays.map((day, idx) => {
                   const dayInsts = getDayInstallments(day);
@@ -161,7 +157,6 @@ export function Calendar() {
               </div>
             </div>
 
-            {/* Sidebar Details */}
             <div className="space-y-8">
               <div className="bg-slate-900 rounded-[2.5rem] p-8 lg:p-10 text-white relative overflow-hidden h-fit">
                 <CalendarIcon className="absolute -bottom-10 -right-10 size-48 opacity-5 rotate-12" />
@@ -220,14 +215,19 @@ export function Calendar() {
                 </div>
               </div>
 
-              {/* Summary Stats */}
               <div className="bg-white rounded-[2.5rem] p-8 border border-slate-50 shadow-sm space-y-6">
                  <h4 className="text-sm font-black uppercase tracking-[0.2em] text-slate-400">{t.monthSummary}</h4>
                  <div className="grid grid-cols-1 gap-4">
                     <div className="bg-slate-50 p-6 rounded-3xl flex justify-between items-center">
                        <div>
                           <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">{t.totalToReceive}</p>
-                          <p className="text-xl font-black text-slate-900">{formatCurrency(installments.filter(i => isSameMonth(new Date(i.due_date), currentDate)).reduce((acc, curr) => acc + curr.amount, 0))}</p>
+                          <p className="text-xl font-black text-slate-900">
+                            {formatCurrency(
+                              installments
+                                .filter(i => isSameMonth(parseAppDate(i.due_date), currentDate))
+                                .reduce((acc, curr) => acc + curr.amount, 0)
+                            )}
+                          </p>
                        </div>
                        <TrendingUp className="size-8 text-emerald-500 opacity-20" />
                     </div>

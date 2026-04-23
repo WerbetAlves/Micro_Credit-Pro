@@ -6,6 +6,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../lib/supabase';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../lib/utils';
+import { parseAppDate } from '../lib/date';
 
 interface Installment {
   id: string;
@@ -32,7 +33,6 @@ export function Payments() {
   const [search, setSearch] = useState('');
   const [filterStatus, setFilterStatus] = useState<string>('all');
   
-  // Modal states
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingInstallment, setEditingInstallment] = useState<Installment | null>(null);
   const [isWalletModalOpen, setIsWalletModalOpen] = useState(false);
@@ -84,7 +84,6 @@ export function Payments() {
     if (!user) return;
     setLoading(true);
     try {
-      // Joining installments -> loans -> clients
       const { data, error } = await supabase
         .from('installments')
         .select(`
@@ -124,21 +123,18 @@ export function Payments() {
     
     setFormLoading(true);
     try {
-      // Find installment
       const { data: inst } = await supabase
         .from('installments')
         .select('amount, loans(id, client_id, clients(full_name))')
         .eq('id', installmentToPay)
         .single();
       
-      if (!inst) throw new Error("Installment not found");
+      if (!inst) throw new Error('Installment not found');
 
       const isPartial = paidAmount < inst.amount;
       const remaining = inst.amount - paidAmount;
 
       if (isPartial) {
-        // Reduz o valor da parcela atual mas mantém o status se ainda houver saldo
-        // Se o valor for reduzido a zero, vira 'paid'
         await supabase
           .from('installments')
           .update({ 
@@ -164,7 +160,6 @@ export function Payments() {
         description: `${isPartial ? t.partialPayment : t.fullPayment} - ${loan?.clients?.full_name || ''}`
       });
 
-      // Update Wallet Balance
       if (selectedWalletId && selectedWalletId !== 'default') {
          const { data: currWallet } = await supabase.from('wallets').select('balance').eq('id', selectedWalletId).single();
          if (currWallet) {
@@ -244,11 +239,10 @@ export function Payments() {
     }
   };
 
-  // Calculate installment order (X of Y)
   const getInstallmentOrder = (inst: Installment) => {
     const loanInstallments = installments
       .filter(i => i.loan_id === inst.loan_id)
-      .sort((a, b) => new Date(a.due_date).getTime() - new Date(b.due_date).getTime());
+      .sort((a, b) => parseAppDate(a.due_date).getTime() - parseAppDate(b.due_date).getTime());
     
     const index = loanInstallments.findIndex(i => i.id === inst.id);
     return {
@@ -303,7 +297,6 @@ export function Payments() {
         </header>
 
         <div className="px-4 lg:px-8 py-8 w-full">
-          {/* Stats Bar */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
             <div className="bg-white p-6 rounded-[1.5rem] border border-slate-50 shadow-sm">
                 <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-1">{t.totalCollected}</p>
@@ -319,7 +312,6 @@ export function Payments() {
             </div>
           </div>
 
-          {/* Filters */}
           <div className="flex flex-col sm:flex-row gap-4 mb-8">
             <div className="flex-1 relative">
               <Search className="absolute left-4 top-1/2 -translate-y-1/2 size-5 text-slate-300" />
@@ -346,7 +338,6 @@ export function Payments() {
             </div>
           </div>
 
-          {/* Installments Cards / Table */}
           {loading ? (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               {Array.from({ length: 6 }).map((_, i) => (
@@ -460,7 +451,6 @@ export function Payments() {
         </div>
       </main>
 
-      {/* Payment/Installment Modal */}
       <AnimatePresence>
         {isModalOpen && (
           <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-6">
@@ -572,7 +562,7 @@ export function Payments() {
           </div>
         )}
       </AnimatePresence>
-      {/* Wallet Selection Modal */}
+
       <AnimatePresence>
         {isWalletModalOpen && (
           <div className="fixed inset-0 z-[110] flex items-center justify-center p-4">
