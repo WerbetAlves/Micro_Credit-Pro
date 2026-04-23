@@ -39,7 +39,7 @@ interface SupportTicket {
 
 export function Support() {
   const { t, formatDate } = useLanguage();
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [tickets, setTickets] = useState<SupportTicket[]>([]);
   const [loading, setLoading] = useState(true);
@@ -49,6 +49,7 @@ export function Support() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [formLoading, setFormLoading] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+  const [formSuccess, setFormSuccess] = useState<string | null>(null);
 
   const [formData, setFormData] = useState({
     subject: '',
@@ -59,13 +60,13 @@ export function Support() {
 
   useEffect(() => {
     fetchTickets();
-  }, [user]);
+  }, [user, profile]);
 
   async function fetchTickets() {
     if (!user) return;
     setLoading(true);
     try {
-      const isAdmin = (user as any).role === 'admin' || user.user_metadata?.role === 'admin';
+      const isAdmin = profile?.is_admin || (user as any).role === 'admin' || user.user_metadata?.role === 'admin';
 
       let query = supabase
         .from('support_tickets')
@@ -97,17 +98,21 @@ export function Support() {
     if (!user) return;
     setFormLoading(true);
     setFormError(null);
+    setFormSuccess(null);
 
     try {
-      const { error } = await supabase.from('support_tickets').insert([{
-        user_id: user.id,
-        ...formData,
-        status: 'open',
-      }]);
+      const { error } = await supabase.from('support_tickets').insert([
+        {
+          user_id: user.id,
+          ...formData,
+          status: 'open',
+        },
+      ]);
 
       if (error) throw error;
 
       setIsModalOpen(false);
+      setFormSuccess(t.ticketCreated);
       setFormData({
         subject: '',
         description: '',
@@ -116,7 +121,11 @@ export function Support() {
       });
       fetchTickets();
     } catch (err: any) {
-      setFormError(err.message);
+      if (err.message?.includes('support_tickets')) {
+        setFormError('A tabela de tickets ainda não existe no banco. Já deixei o schema preparado para você criar essa parte no Supabase.');
+      } else {
+        setFormError(err.message);
+      }
     } finally {
       setFormLoading(false);
     }
@@ -188,6 +197,12 @@ export function Support() {
         </Header>
 
         <div className="px-4 lg:px-8 py-8 w-full">
+          {formSuccess && (
+            <div className="mb-6 rounded-2xl border border-emerald-100 bg-emerald-50 px-4 py-3 text-sm font-bold text-emerald-700">
+              {formSuccess}
+            </div>
+          )}
+
           <section className="mb-10">
             <div className="bg-slate-900 rounded-[2.5rem] p-8 lg:p-12 text-white relative overflow-hidden shadow-2xl">
               <div className="relative z-10 grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">
@@ -218,6 +233,7 @@ export function Support() {
                     </button>
                   </div>
                 </div>
+
                 <div className="hidden lg:flex justify-end">
                   <div className="relative group">
                     <div className="absolute inset-0 bg-emerald-500/10 blur-[100px] rounded-full group-hover:bg-emerald-500/20 transition-all duration-1000" />
@@ -240,6 +256,10 @@ export function Support() {
               </div>
               <div className="absolute top-0 right-0 w-1/2 h-full bg-gradient-to-l from-emerald-500/5 to-transparent pointer-events-none" />
             </div>
+          </section>
+
+          <section className="mb-10">
+            <AIAssistantDashboard />
           </section>
 
           <div className="flex flex-col sm:flex-row gap-4 mb-8">
@@ -338,7 +358,7 @@ export function Support() {
                         </span>
                       </div>
 
-                      {(((user as any)?.role === 'admin') || user?.user_metadata?.role === 'admin') && (
+                      {(profile?.is_admin || ((user as any)?.role === 'admin') || user?.user_metadata?.role === 'admin') && (
                         <div className="flex gap-2">
                           {ticket.status === 'open' && (
                             <button
@@ -475,10 +495,6 @@ export function Support() {
             </div>
           )}
         </AnimatePresence>
-
-        <div className="hidden">
-          <AIAssistantDashboard />
-        </div>
       </main>
     </div>
   );
