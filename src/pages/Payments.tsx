@@ -7,6 +7,7 @@ import { supabase } from '../lib/supabase';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../lib/utils';
 import { parseAppDate } from '../lib/date';
+import { getInstallmentDisplayStatus, getTodayLocal } from '../lib/installments';
 
 interface Installment {
   id: string;
@@ -27,27 +28,6 @@ interface Installment {
 
 type InstallmentStatus = 'upcoming' | 'paid' | 'late' | 'missed';
 
-const getTodayLocal = () => {
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  return today;
-};
-
-const getDisplayStatus = (inst: Installment): InstallmentStatus => {
-  if (inst.status === 'paid' || inst.status === 'missed') {
-    return inst.status;
-  }
-
-  const dueDate = parseAppDate(inst.due_date);
-  dueDate.setHours(0, 0, 0, 0);
-
-  if (dueDate < getTodayLocal()) {
-    return 'late';
-  }
-
-  return inst.status;
-};
-
 export function Payments() {
   const { t, formatCurrency, formatDate } = useLanguage();
   const { user } = useAuth();
@@ -63,6 +43,7 @@ export function Payments() {
   const [isWalletModalOpen, setIsWalletModalOpen] = useState(false);
   const [selectedWalletId, setSelectedWalletId] = useState<string>('');
   const [wallets, setWallets] = useState<{ id: string; name: string }[]>([]);
+  const [paymentReceivedTotal, setPaymentReceivedTotal] = useState(0);
   const [installmentToPay, setInstallmentToPay] = useState<string | null>(null);
   const [paidAmount, setPaidAmount] = useState<number>(0);
   const [formLoading, setFormLoading] = useState(false);
@@ -132,6 +113,17 @@ export function Payments() {
       if (error) throw error;
 
       setInstallments(data || []);
+
+      const { data: paymentTransactions } = await supabase
+        .from('transactions')
+        .select('amount, category, type')
+        .eq('user_id', user.id)
+        .eq('category', 'payment_received')
+        .eq('type', 'income');
+
+      setPaymentReceivedTotal(
+        (paymentTransactions || []).reduce((acc: number, transaction: any) => acc + Number(transaction.amount || 0), 0)
+      );
     } catch (err: any) {
       console.error('Error fetching installments:', err.message);
     } finally {
@@ -223,7 +215,7 @@ export function Payments() {
         loan_id: inst.loan_id,
         due_date: inst.due_date,
         amount: inst.amount,
-        status: getDisplayStatus(inst),
+        status: getInstallmentDisplayStatus(inst),
       });
     } else {
       setEditingInstallment(null);
@@ -313,21 +305,19 @@ export function Payments() {
 
   const filteredInstallments = installments.filter((inst) => {
     const clientName = inst.loans?.clients?.full_name || '';
-    const displayStatus = getDisplayStatus(inst);
+    const displayStatus = getInstallmentDisplayStatus(inst);
     const matchesSearch = clientName.toLowerCase().includes(search.toLowerCase());
     const matchesFilter = filterStatus === 'all' || displayStatus === filterStatus;
     return matchesSearch && matchesFilter;
   });
 
   const stats = {
-    totalPaid: installments
-      .filter((i) => getDisplayStatus(i) === 'paid')
-      .reduce((acc, i) => acc + Number(i.amount), 0),
+    totalPaid: paymentReceivedTotal,
     totalUpcoming: installments
-      .filter((i) => getDisplayStatus(i) === 'upcoming')
+      .filter((i) => getInstallmentDisplayStatus(i) === 'upcoming')
       .reduce((acc, i) => acc + Number(i.amount), 0),
     totalLate: installments
-      .filter((i) => getDisplayStatus(i) === 'late')
+      .filter((i) => getInstallmentDisplayStatus(i) === 'late')
       .reduce((acc, i) => acc + Number(i.amount), 0),
   };
 
@@ -418,7 +408,7 @@ export function Payments() {
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               {filteredInstallments.map((inst) => {
                 const { current, total } = getInstallmentOrder(inst);
-                const displayStatus = getDisplayStatus(inst);
+                const displayStatus = getInstallmentDisplayStatus(inst);
 
                 return (
                   <motion.div

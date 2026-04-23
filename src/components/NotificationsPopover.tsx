@@ -31,6 +31,8 @@ interface NotificationsPopoverProps {
   onMarkAsRead: (id: string) => void;
   onMarkAllAsRead: () => void;
   onClearAll: () => void;
+  onOpenNotification?: (notification: Notification) => void;
+  onViewAll?: () => void;
 }
 
 export function NotificationsPopover({ 
@@ -39,7 +41,9 @@ export function NotificationsPopover({
   notifications, 
   onMarkAsRead, 
   onMarkAllAsRead,
-  onClearAll
+  onClearAll,
+  onOpenNotification,
+  onViewAll,
 }: NotificationsPopoverProps) {
   const { t, language } = useLanguage();
   const dateLocale = language === 'pt' ? ptBR : enUS;
@@ -110,7 +114,12 @@ export function NotificationsPopover({
                   {notifications.map((n) => (
                     <div 
                       key={n.id}
-                      onClick={() => !n.isRead && onMarkAsRead(n.id)}
+                      onClick={() => {
+                        if (!n.isRead) {
+                          onMarkAsRead(n.id);
+                        }
+                        onOpenNotification?.(n);
+                      }}
                       className={cn(
                         "p-5 flex gap-4 transition-all cursor-pointer group hover:bg-slate-50",
                         !n.isRead ? "bg-primary-50/30" : "bg-white"
@@ -157,7 +166,10 @@ export function NotificationsPopover({
             {/* Footer */}
             {notifications.length > 0 && (
               <div className="p-4 border-t border-slate-50">
-                <button className="w-full py-3 bg-slate-50 hover:bg-slate-100 text-slate-400 rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] transition-all">
+                <button
+                  onClick={onViewAll}
+                  className="w-full py-3 bg-slate-50 hover:bg-slate-100 text-slate-400 rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] transition-all"
+                >
                   {t.fullActivityLog}
                 </button>
               </div>

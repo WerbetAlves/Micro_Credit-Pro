@@ -5,45 +5,26 @@ import { Header } from '../components/Header';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../lib/supabase';
-import {
-  format,
-  addMonths,
-  subMonths,
-  startOfMonth,
-  endOfMonth,
-  startOfWeek,
-  endOfWeek,
-  isSameMonth,
-  isSameDay,
-  eachDayOfInterval
+import { 
+  format, 
+  addMonths, 
+  subMonths, 
+  startOfMonth, 
+  endOfMonth, 
+  startOfWeek, 
+  endOfWeek, 
+  isSameMonth, 
+  isSameDay, 
+  addDays, 
+  eachDayOfInterval 
 } from 'date-fns';
 import { ptBR, enUS } from 'date-fns/locale';
 import { cn } from '../lib/utils';
-import { motion } from 'motion/react';
+import { motion, AnimatePresence } from 'motion/react';
 import { parseAppDate } from '../lib/date';
+import { getInstallmentDisplayStatus, isReceivableInstallment } from '../lib/installments';
 
 type InstallmentStatus = 'upcoming' | 'paid' | 'late' | 'missed';
-
-const getTodayLocal = () => {
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  return today;
-};
-
-const getDisplayStatus = (inst: { due_date: string; status: InstallmentStatus }) => {
-  if (inst.status === 'paid' || inst.status === 'missed') {
-    return inst.status;
-  }
-
-  const dueDate = parseAppDate(inst.due_date);
-  dueDate.setHours(0, 0, 0, 0);
-
-  if (dueDate < getTodayLocal()) {
-    return 'late';
-  }
-
-  return inst.status;
-};
 
 export function Calendar() {
   const { t, formatCurrency, language } = useLanguage();
@@ -66,7 +47,6 @@ export function Calendar() {
       .from('installments')
       .select('*, loans!inner(user_id, clients(full_name, phone))')
       .eq('loans.user_id', user.id);
-
     if (data) setInstallments(data);
   }
 
@@ -81,7 +61,7 @@ export function Calendar() {
   const calendarDays = eachDayOfInterval({ start: startDate, end: endDate });
 
   const getDayInstallments = (day: Date) => {
-    return installments.filter((inst) => isSameDay(parseAppDate(inst.due_date), day));
+    return installments.filter(inst => isSameDay(parseAppDate(inst.due_date), day));
   };
 
   const handleNotifyClient = (inst: any) => {
@@ -111,16 +91,8 @@ export function Calendar() {
 
   const monthReceivableTotal = installments
     .filter((inst) => isSameMonth(parseAppDate(inst.due_date), currentDate))
-    .filter((inst) => getDisplayStatus(inst) !== 'paid' && getDisplayStatus(inst) !== 'missed')
+    .filter((inst) => isReceivableInstallment(inst))
     .reduce((acc, curr) => acc + Number(curr.amount), 0);
-
-  const selectedDayPending = selectedDayInstallments.filter((inst) => getDisplayStatus(inst) === 'upcoming');
-  const selectedDayLate = selectedDayInstallments.filter((inst) => getDisplayStatus(inst) === 'late');
-  const selectedDayPaid = selectedDayInstallments.filter((inst) => getDisplayStatus(inst) === 'paid');
-
-  const selectedDayPendingTotal = selectedDayPending.reduce((acc, curr) => acc + Number(curr.amount), 0);
-  const selectedDayLateTotal = selectedDayLate.reduce((acc, curr) => acc + Number(curr.amount), 0);
-  const selectedDayPaidTotal = selectedDayPaid.reduce((acc, curr) => acc + Number(curr.amount), 0);
 
   return (
     <div className="flex min-h-screen bg-[#f8fafc] overflow-x-hidden">
@@ -131,6 +103,8 @@ export function Calendar() {
 
         <div className="px-4 lg:px-8 py-8 w-full max-w-[1600px] mx-auto space-y-8">
           <div className="grid grid-cols-1 xl:grid-cols-3 gap-8">
+            
+            {/* Calendar Grid */}
             <div className="xl:col-span-2 bg-white rounded-[2.5rem] border border-slate-50 shadow-sm p-6 lg:p-10">
               <div className="flex items-center justify-between mb-10">
                 <div>
@@ -154,14 +128,16 @@ export function Calendar() {
                 </div>
               </div>
 
+              {/* Days Header */}
               <div className="grid grid-cols-7 mb-4">
-                {['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sab'].map((d) => (
+                {['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sab'].map(d => (
                   <div key={d} className="text-center text-[10px] font-black uppercase tracking-widest text-slate-400 py-3">
                     {d}
                   </div>
                 ))}
               </div>
 
+              {/* Grid Days */}
               <div className="grid grid-cols-7 gap-px bg-slate-100 border border-slate-100 rounded-3xl overflow-hidden shadow-inner">
                 {calendarDays.map((day, idx) => {
                   const dayInsts = getDayInstallments(day);
@@ -170,43 +146,38 @@ export function Calendar() {
                   const isSelected = selectedDay && isSameDay(day, selectedDay);
 
                   return (
-                    <div
+                    <div 
                       key={idx}
                       onClick={() => handleDayClick(day)}
                       className={cn(
-                        'min-h-[100px] lg:min-h-[140px] p-3 transition-all cursor-pointer relative',
-                        isCurrentMonth ? 'bg-white' : 'bg-slate-50/50 grayscale opacity-40',
-                        isSelected ? 'bg-emerald-50/30' : 'hover:bg-slate-50'
+                        "min-h-[100px] lg:min-h-[140px] p-3 transition-all cursor-pointer relative",
+                        isCurrentMonth ? "bg-white" : "bg-slate-50/50 grayscale opacity-40",
+                        isSelected ? "bg-emerald-50/30" : "hover:bg-slate-50"
                       )}
                     >
                       <div className="flex justify-between items-start">
-                        <span
-                          className={cn(
-                            'text-xs font-black p-1.5 rounded-lg w-8 h-8 flex items-center justify-center transition-all',
-                            isToday ? 'bg-primary-500 text-white shadow-lg shadow-primary-200' : 'text-slate-400',
-                            isSelected && !isToday ? 'bg-emerald-100 text-emerald-700' : ''
-                          )}
-                        >
+                        <span className={cn(
+                          "text-xs font-black p-1.5 rounded-lg w-8 h-8 flex items-center justify-center transition-all",
+                          isToday ? "bg-primary-500 text-white shadow-lg shadow-primary-200" : "text-slate-400",
+                          isSelected && !isToday ? "bg-emerald-100 text-emerald-700" : ""
+                        )}>
                           {format(day, 'd')}
                         </span>
                         {dayInsts.length > 0 && (
                           <div className="bg-emerald-500 w-2 h-2 rounded-full animate-pulse shadow-sm" />
                         )}
                       </div>
-
+                      
                       <div className="mt-3 space-y-1">
                         {dayInsts.slice(0, 3).map((inst, i) => (
-                          <div
-                            key={i}
-                            className={cn(
-                              'text-[8px] font-bold p-1 rounded-md truncate border',
-                              getDisplayStatus(inst) === 'paid'
-                                ? 'bg-emerald-50 text-emerald-600 border-emerald-100'
-                                : getDisplayStatus(inst) === 'late'
-                                  ? 'bg-rose-50 text-rose-600 border-rose-100'
-                                  : 'bg-amber-50 text-amber-600 border-amber-100'
-                            )}
-                          >
+                          <div key={i} className={cn(
+                            "text-[8px] font-bold p-1 rounded-md truncate border",
+                            getInstallmentDisplayStatus(inst) === 'paid'
+                              ? "bg-emerald-50 text-emerald-600 border-emerald-100"
+                              : getInstallmentDisplayStatus(inst) === 'late'
+                                ? "bg-red-50 text-red-600 border-red-100"
+                                : "bg-amber-50 text-amber-600 border-amber-100"
+                          )}>
                             {inst.loans?.clients?.full_name.split(' ')[0]} - {formatCurrency(inst.amount)}
                           </div>
                         ))}
@@ -222,6 +193,7 @@ export function Calendar() {
               </div>
             </div>
 
+            {/* Sidebar Details */}
             <div className="space-y-8">
               <div className="bg-slate-900 rounded-[2.5rem] p-8 lg:p-10 text-white relative overflow-hidden h-fit">
                 <CalendarIcon className="absolute -bottom-10 -right-10 size-48 opacity-5 rotate-12" />
@@ -229,32 +201,15 @@ export function Calendar() {
                   <Clock className="size-5 text-emerald-400" />
                   {selectedDay ? format(selectedDay, "dd 'de' MMMM", { locale: loc }) : t.selectDay}
                 </h3>
-
-                {selectedDay && (
-                  <div className="grid grid-cols-1 gap-3 mb-6 relative z-10">
-                    <div className="bg-white/5 border border-white/10 rounded-2xl p-4">
-                      <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1">Receber no dia</p>
-                      <p className="text-lg font-black text-amber-300">{formatCurrency(selectedDayPendingTotal)}</p>
-                    </div>
-                    <div className="bg-white/5 border border-white/10 rounded-2xl p-4">
-                      <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1">Atrasadas no dia</p>
-                      <p className="text-lg font-black text-rose-300">{formatCurrency(selectedDayLateTotal)}</p>
-                    </div>
-                    <div className="bg-white/5 border border-white/10 rounded-2xl p-4">
-                      <p className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1">Pagas no dia</p>
-                      <p className="text-lg font-black text-emerald-300">{formatCurrency(selectedDayPaidTotal)}</p>
-                    </div>
-                  </div>
-                )}
-
+                
                 <div className="space-y-6 relative z-10">
                   {selectedDayInstallments.length > 0 ? (
                     selectedDayInstallments.map((inst, idx) => (
-                      <motion.div
+                      <motion.div 
                         initial={{ opacity: 0, x: 20 }}
                         animate={{ opacity: 1, x: 0 }}
                         transition={{ delay: idx * 0.1 }}
-                        key={idx}
+                        key={idx} 
                         className="bg-white/5 backdrop-blur-sm border border-white/10 p-5 rounded-3xl hover:bg-white/10 transition-all group"
                       >
                         <div className="flex justify-between items-start mb-4">
@@ -263,36 +218,38 @@ export function Calendar() {
                               <User className="size-4 text-emerald-400" />
                             </div>
                             <div>
-                              <p className="text-xs font-black uppercase tracking-tight text-white mb-0.5">{inst.loans?.clients?.full_name}</p>
-                              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{t.monthlyInstallmentLabel}</p>
+                                <p className="text-xs font-black uppercase tracking-tight text-white mb-0.5">{inst.loans?.clients?.full_name}</p>
+                                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{t.monthlyInstallmentLabel}</p>
                             </div>
                           </div>
-                          <span
-                            className={cn(
-                              'px-3 py-1 rounded-full text-[8px] font-black uppercase tracking-widest',
-                              getDisplayStatus(inst) === 'paid'
-                                ? 'bg-emerald-500/20 text-emerald-400'
-                                : getDisplayStatus(inst) === 'late'
-                                  ? 'bg-rose-500/20 text-rose-300'
-                                  : 'bg-amber-500/20 text-amber-400'
-                            )}
-                          >
-                            {getDisplayStatus(inst) === 'paid' ? t.paid : getDisplayStatus(inst) === 'late' ? t.late : t.pending}
+                          <span className={cn(
+                            "px-3 py-1 rounded-full text-[8px] font-black uppercase tracking-widest",
+                            getInstallmentDisplayStatus(inst) === 'paid'
+                              ? "bg-emerald-500/20 text-emerald-400"
+                              : getInstallmentDisplayStatus(inst) === 'late'
+                                ? "bg-red-500/20 text-red-300"
+                                : "bg-amber-500/20 text-amber-400"
+                          )}>
+                            {getInstallmentDisplayStatus(inst) === 'paid'
+                              ? t.paid
+                              : getInstallmentDisplayStatus(inst) === 'late'
+                                ? t.late
+                                : t.pending}
                           </span>
                         </div>
-
+                        
                         <div className="flex items-center justify-between pt-4 border-t border-white/5">
-                          <div className="flex items-center gap-1.5">
-                            <DollarSign className="size-3 text-emerald-500" />
-                            <span className="text-sm font-black text-white">{formatCurrency(inst.amount)}</span>
-                          </div>
-                          <button
-                            type="button"
-                            onClick={() => handleNotifyClient(inst)}
-                            className="text-[10px] font-black uppercase tracking-[0.2em] text-emerald-400 hover:text-emerald-300 transition-all"
-                          >
-                            {t.notify}
-                          </button>
+                           <div className="flex items-center gap-1.5">
+                              <DollarSign className="size-3 text-emerald-500" />
+                              <span className="text-sm font-black text-white">{formatCurrency(inst.amount)}</span>
+                           </div>
+                           <button
+                             type="button"
+                             onClick={() => handleNotifyClient(inst)}
+                             className="text-[10px] font-black uppercase tracking-[0.2em] text-emerald-400 hover:text-emerald-300 transition-all"
+                           >
+                             {t.notify}
+                           </button>
                         </div>
                       </motion.div>
                     ))
@@ -307,19 +264,21 @@ export function Calendar() {
                 </div>
               </div>
 
+              {/* Summary Stats */}
               <div className="bg-white rounded-[2.5rem] p-8 border border-slate-50 shadow-sm space-y-6">
-                <h4 className="text-sm font-black uppercase tracking-[0.2em] text-slate-400">{t.monthSummary}</h4>
-                <div className="grid grid-cols-1 gap-4">
-                  <div className="bg-slate-50 p-6 rounded-3xl flex justify-between items-center">
-                    <div>
-                      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">{t.totalToReceive}</p>
-                      <p className="text-xl font-black text-slate-900">{formatCurrency(monthReceivableTotal)}</p>
+                 <h4 className="text-sm font-black uppercase tracking-[0.2em] text-slate-400">{t.monthSummary}</h4>
+                 <div className="grid grid-cols-1 gap-4">
+                    <div className="bg-slate-50 p-6 rounded-3xl flex justify-between items-center">
+                       <div>
+                          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">{t.totalToReceive}</p>
+                          <p className="text-xl font-black text-slate-900">{formatCurrency(monthReceivableTotal)}</p>
+                       </div>
+                       <TrendingUp className="size-8 text-emerald-500 opacity-20" />
                     </div>
-                    <TrendingUp className="size-8 text-emerald-500 opacity-20" />
-                  </div>
-                </div>
+                 </div>
               </div>
             </div>
+
           </div>
         </div>
       </main>

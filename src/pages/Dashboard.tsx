@@ -15,6 +15,26 @@ import { useAuth } from '../contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase';
 import { cn } from '../lib/utils';
+import { useRealtimeRefresh } from '../lib/useRealtimeRefresh';
+import { isLoanWrittenOff } from '../lib/loanWriteOff';
+
+type DashboardLoan = {
+  id: string;
+  principal_amount: number;
+  status: 'pending' | 'active' | 'repaid' | 'default';
+  notes?: string | null;
+};
+
+type DashboardWallet = {
+  balance: number;
+};
+
+type DashboardTransaction = {
+  type: 'income' | 'expense';
+  category: 'loan_disbursement' | 'payment_received' | 'fee' | 'adjustment' | 'other';
+  amount: number;
+  created_at: string;
+};
 
 export function Dashboard() {
   const { t, formatCurrency } = useLanguage();
@@ -22,6 +42,7 @@ export function Dashboard() {
   const navigate = useNavigate();
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [profile, setProfile] = useState<any>(null);
+  const [isLoadingStats, setIsLoadingStats] = useState(true);
 
   const [stats, setStats] = useState({
     totalCapital: 0,
@@ -31,7 +52,7 @@ export function Dashboard() {
     avgLoanAmount: 0,
     hasWallets: false,
     hasClients: false,
-    hasLoans: false
+    hasLoans: false,
   });
   const [errorVisible, setErrorVisible] = useState<string | null>(null);
   const [showWelcome, setShowWelcome] = useState(false);
@@ -51,84 +72,117 @@ export function Dashboard() {
   };
 
   useEffect(() => {
-    fetchDashboardStats();
+    void fetchDashboardStats();
   }, [user]);
 
-  async function fetchDashboardStats() {
+  useRealtimeRefresh({
+    enabled: !!user,
+    channelKey: `dashboard-kpis-${user?.id || 'guest'}`,
+    tables: ['loans', 'wallets', 'clients', 'transactions', 'profiles'],
+    onRefresh: () => fetchDashboardStats(true),
+    intervalMs: 45000,
+  });
+
+  async function fetchDashboardStats(silent = false) {
     if (!user) return;
 
     try {
+      if (!silent) {
+        setIsLoadingStats(true);
+      }
+
       setErrorVisible(null);
 
-      const { data: profileData } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', user.id)
-        .single();
+      const [
+        { data: profileData },
+        { data: loans, error: loansError },
+        { data: wallets, error: walletsError },
+        { count: clientsCount },
+        { data: transactions, error: transactionsError },
+      ] = await Promise.all([
+        supabase.from('profiles').select('*').eq('id', user.id).single(),
+        supabase.from('loans').select('id, principal_amount, status, notes').eq('user_id', user.id),
+        supabase.from('wallets').select('balance').eq('user_id', user.id),
+        supabase.from('clients').select('id', { count: 'exact' }).eq('user_id', user.id).limit(1),
+        supabase.from('transactions').select('type, category, amount, created_at').eq('user_id', user.id),
+      ]);
 
-      if (profileData) setProfile(profileData);
-
-      const { data: loans, error: loansError } = await supabase
-        .from('loans')
-        .select('*')
-        .eq('user_id', user.id);
+      if (profileData) {
+        setProfile(profileData);
+      }
 
       if (loansError) throw loansError;
+      if (transactionsError) throw transactionsError;
 
-      const totalLoansCapital = (loans || []).reduce((acc: number, l: any) => acc + Number(l.principal_amount), 0);
-      const activeCount = (loans || []).filter((l: any) => l.status === 'active' || l.status === 'pending').length;
-      const defaultCount = (loans || []).filter((l: any) => l.status === 'default').length;
-      const defRate = loans?.length ? (defaultCount / loans.length) * 100 : 0;
-      const avgAmt = loans?.length ? totalLoansCapital / loans.length : 0;
+      const safeLoans = ((loans || []) as DashboardLoan[]).map((loan) => ({
+        ...loan,
+        principal_amount: Number(loan.principal_amount || 0),
+      }));
+
+      const visibleLoans = safeLoans.filter((loan) => !isLoanWrittenOff(loan.notes));
+      const issuedLoans = visibleLoans.filter((loan) => loan.status !== 'pending');
+      const activeLoans = visibleLoans.filter((loan) => loan.status === 'active');
+      const riskyExposure = safeLoans
+        .filter((loan) => !isLoanWrittenOff(loan.notes) && (loan.status === 'active' || loan.status === 'default'))
+        .reduce((acc, loan) => acc + loan.principal_amount, 0);
+
+      const activeCount = activeLoans.length;
+      const defaultCount = issuedLoans.filter((loan) => loan.status === 'default').length;
+      const defRate = issuedLoans.length > 0 ? (defaultCount / issuedLoans.length) * 100 : 0;
+      const avgAmt =
+        issuedLoans.length > 0
+          ? issuedLoans.reduce((acc, loan) => acc + loan.principal_amount, 0) / issuedLoans.length
+          : 0;
 
       let totalWalletBalance = 0;
-      const { data: wallets, error: walletsError } = await supabase
-        .from('wallets')
-        .select('balance')
-        .eq('user_id', user.id);
-
       if (!walletsError && wallets) {
-        totalWalletBalance = wallets.reduce((acc: number, w: any) => acc + Number(w.balance), 0);
+        totalWalletBalance = (wallets as DashboardWallet[]).reduce(
+          (acc, wallet) => acc + Number(wallet.balance || 0),
+          0
+        );
       }
 
-      const { count: clientsCount } = await supabase
-        .from('clients')
-        .select('id', { count: 'exact' })
-        .eq('user_id', user.id)
-        .limit(1);
-
-      let monthlyP = 0;
       const now = new Date();
-      const firstDay = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0];
-      const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0).toISOString().split('T')[0];
+      const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+      const nextMonthStart = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+      const safeTransactions = (transactions || []) as DashboardTransaction[];
 
-      const { data: paidInstallments, error: instError } = await supabase
-        .from('installments')
-        .select('amount, loan_id')
-        .eq('status', 'paid')
-        .gte('due_date', firstDay)
-        .lte('due_date', lastDay);
+      const monthlyP = safeTransactions
+        .filter((transaction) => {
+          const createdAt = new Date(transaction.created_at);
+          return createdAt >= monthStart && createdAt < nextMonthStart;
+        })
+        .reduce((acc, transaction) => {
+          const amount = Number(transaction.amount || 0);
 
-      if (!instError && paidInstallments && loans) {
-        const myLoanIds = loans.map((l: any) => l.id);
-        monthlyP = paidInstallments
-          .filter((i: any) => myLoanIds.includes(i.loan_id))
-          .reduce((acc: number, i: any) => acc + Number(i.amount), 0);
-      }
+          if (transaction.type === 'income') {
+            return acc + amount;
+          }
+
+          if (transaction.category === 'loan_disbursement') {
+            return acc;
+          }
+
+          return acc - amount;
+        }, 0);
 
       setStats({
-        totalCapital: totalLoansCapital + totalWalletBalance,
+        totalCapital: totalWalletBalance + riskyExposure,
         monthlyProfit: monthlyP,
         activeLoans: activeCount,
         defaultRate: defRate,
         avgLoanAmount: avgAmt,
         hasWallets: (wallets?.length || 0) > 0,
         hasClients: (clientsCount || 0) > 0,
-        hasLoans: (loans?.length || 0) > 0
+        hasLoans: visibleLoans.length > 0,
       });
     } catch (err: any) {
       console.error('Error fetching dashboard stats:', err.message);
       setErrorVisible(err.message);
+    } finally {
+      if (!silent) {
+        setIsLoadingStats(false);
+      }
     }
   }
 
@@ -171,10 +225,9 @@ export function Dashboard() {
                 <Plus className="size-6" />
               </div>
               <span className="text-[10px] font-black text-slate-700 uppercase tracking-widest">
-                {t.issueLoan || 'Novo Empréstimo'}
+                {t.issueLoan || 'Novo Emprestimo'}
               </span>
             </button>
-
             <button
               onClick={() => navigate('/clients')}
               className="group p-4 bg-white rounded-3xl border border-slate-50 shadow-sm hover:shadow-xl hover:shadow-primary-100/50 transition-all flex flex-col items-center text-center space-y-3"
@@ -184,7 +237,6 @@ export function Dashboard() {
               </div>
               <span className="text-[10px] font-black text-slate-700 uppercase tracking-widest">{t.addClient}</span>
             </button>
-
             <button
               onClick={() => navigate('/payments')}
               className="group p-4 bg-white rounded-3xl border border-slate-50 shadow-sm hover:shadow-xl hover:shadow-amber-100/50 transition-all flex flex-col items-center text-center space-y-3"
@@ -192,9 +244,10 @@ export function Dashboard() {
               <div className="w-12 h-12 rounded-2xl bg-amber-500 text-white flex items-center justify-center group-hover:scale-110 transition-transform shadow-lg shadow-amber-200">
                 <Zap className="size-6" />
               </div>
-              <span className="text-[10px] font-black text-slate-700 uppercase tracking-widest">{t.manageInstallments}</span>
+              <span className="text-[10px] font-black text-slate-700 uppercase tracking-widest">
+                {t.manageInstallments}
+              </span>
             </button>
-
             <button
               onClick={() => navigate('/financial')}
               className="group p-4 bg-white rounded-3xl border border-slate-50 shadow-sm hover:shadow-xl hover:shadow-blue-100/50 transition-all flex flex-col items-center text-center space-y-3"
@@ -206,38 +259,53 @@ export function Dashboard() {
             </button>
           </div>
 
-          <OnboardingChecklist
-            hasWallets={stats.hasWallets}
-            hasClients={stats.hasClients}
-            hasLoans={stats.hasLoans}
-          />
+          <OnboardingChecklist hasWallets={stats.hasWallets} hasClients={stats.hasClients} hasLoans={stats.hasLoans} />
+
+          {errorVisible && (
+            <div className="rounded-[2rem] border border-rose-100 bg-rose-50/80 px-5 py-4 text-sm font-medium text-rose-700">
+              Nao foi possivel atualizar todos os indicadores do painel agora. Alguns numeros podem estar temporariamente desatualizados.
+            </div>
+          )}
 
           <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 lg:gap-6">
-            <KPICard
-              label={t.totalCapital}
-              value={stats.totalCapital}
-              isCurrency={true}
-              change={t.vsLastMonth.replace('{val}', '+0.0%')}
-              trend="up"
-            />
-            <KPICard
-              label={t.monthlyProfit}
-              value={stats.monthlyProfit}
-              isCurrency={true}
-              change={t.yield.replace('{val}', '0.0%')}
-              trend="up"
-            />
-            <KPICard
-              label={t.activeLoans}
-              value={stats.activeLoans.toString()}
-              subtext={t.avgPerClient.replace('{amount}', formatCurrency(stats.avgLoanAmount))}
-            />
-            <KPICard
-              label={t.defaultRate}
-              value={`${stats.defaultRate.toFixed(1)}%`}
-              change={t.improvement.replace('{val}', '0,0%')}
-              trend="up"
-            />
+            {isLoadingStats ? (
+              Array.from({ length: 4 }).map((_, index) => (
+                <div
+                  key={`dashboard-kpi-skeleton-${index}`}
+                  className="bg-white rounded-[2rem] p-6 lg:p-8 border border-slate-50 shadow-sm animate-pulse"
+                >
+                  <div className="h-3 w-24 rounded-full bg-slate-100" />
+                  <div className="mt-5 h-10 w-32 rounded-2xl bg-slate-100" />
+                  <div className="mt-8 h-10 w-full rounded-2xl bg-slate-50" />
+                </div>
+              ))
+            ) : (
+              <>
+                <KPICard
+                  label={t.totalCapital}
+                  value={stats.totalCapital}
+                  isCurrency={true}
+                  subtext="Caixa + carteira em operacao"
+                />
+                <KPICard
+                  label={t.monthlyProfit}
+                  value={stats.monthlyProfit}
+                  isCurrency={true}
+                  subtext="Fluxo liquido do mes"
+                />
+                <KPICard
+                  label={t.activeLoans}
+                  value={stats.activeLoans.toString()}
+                  subtext={t.avgPerClient.replace('{amount}', formatCurrency(stats.avgLoanAmount))}
+                />
+                <KPICard
+                  label={t.defaultRate}
+                  value={`${stats.defaultRate.toFixed(1)}%`}
+                  subtext="Base: emprestimos emitidos"
+                  trend={stats.defaultRate > 0 ? 'down' : 'neutral'}
+                />
+              </>
+            )}
           </section>
 
           <div className="space-y-8 lg:space-y-12 w-full">

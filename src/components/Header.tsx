@@ -1,11 +1,16 @@
-import React, { useState, useEffect } from 'react';
+import React, { lazy, Suspense, useState, useEffect } from 'react';
 import { Search, Bell, Menu } from 'lucide-react';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { cn } from '../lib/utils';
 import { useAuth } from '../contexts/AuthContext';
 import { useLanguage } from '../contexts/LanguageContext';
 import { supabase } from '../lib/supabase';
-import { UserProfileModal } from './UserProfileModal';
 import { NotificationsPopover, Notification } from './NotificationsPopover';
+import { buildDashboardNotifications } from '../lib/dashboardNotifications';
+
+const UserProfileModal = lazy(() =>
+  import('./UserProfileModal').then((module) => ({ default: module.UserProfileModal }))
+);
 
 interface HeaderProps {
   title: string;
@@ -16,10 +21,15 @@ interface HeaderProps {
 export function Header({ title, onMenuClick, children }: HeaderProps) {
   const { user } = useAuth();
   const { t } = useLanguage();
+  const navigate = useNavigate();
+  const location = useLocation();
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
   const [profile, setProfile] = useState<any>(null);
   const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [searchTerm, setSearchTerm] = useState('');
+
+  const readStorageKey = user ? `emerald_notifications_read_${user.id}` : 'emerald_notifications_read_guest';
 
   useEffect(() => {
     async function fetchProfile() {
@@ -35,44 +45,132 @@ export function Header({ title, onMenuClick, children }: HeaderProps) {
     fetchNotifications();
   }, [user]);
 
+  useEffect(() => {
+    if (!user || typeof (supabase as any).channel !== 'function') return;
+
+    const channel = (supabase as any)
+      .channel(`dashboard-live-${user.id}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'installments' }, () => fetchNotifications())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'loans' }, () => fetchNotifications())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'clients' }, () => fetchNotifications())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'support_tickets' }, () => fetchNotifications())
+      .subscribe();
+
+    return () => {
+      if (typeof (supabase as any).removeChannel === 'function') {
+        (supabase as any).removeChannel(channel);
+      }
+    };
+  }, [user]);
+
+  useEffect(() => {
+    if (!user) return;
+
+    const intervalId = window.setInterval(() => {
+      fetchNotifications();
+    }, 60000);
+
+    const handleFocus = () => {
+      fetchNotifications();
+    };
+
+    window.addEventListener('focus', handleFocus);
+
+    return () => {
+      window.clearInterval(intervalId);
+      window.removeEventListener('focus', handleFocus);
+    };
+  }, [user]);
+
   async function fetchNotifications() {
     if (!user) return;
-    const { data } = await supabase
-      .from('notifications')
-      .select('*')
-      .eq('user_id', user.id)
-      .order('created_at', { ascending: false });
-    
-    if (data) {
-      setNotifications(data.map((n: any) => ({
-        id: n.id,
-        type: n.type,
-        title: n.title,
-        message: n.message,
-        timestamp: new Date(n.created_at),
-        isRead: n.is_read
-      })));
-    }
+
+    const readIds = JSON.parse(localStorage.getItem(readStorageKey) || '[]') as string[];
+
+    const [{ data: installments }, { data: loans }, { data: clients }, { data: supportTickets }] = await Promise.all([
+      supabase
+        .from('installments')
+        .select('id, due_date, amount, status, loans!inner(user_id, clients(full_name))')
+        .eq('loans.user_id', user.id),
+      supabase
+        .from('loans')
+        .select('id, principal_amount, status, created_at, clients(full_name)')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false })
+        .limit(10),
+      supabase
+        .from('clients')
+        .select('id, full_name, created_at')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false })
+        .limit(5),
+      supabase
+        .from('support_tickets')
+        .select('id, subject, status, created_at')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: false })
+        .limit(10),
+    ]);
+
+    const mapped = buildDashboardNotifications({
+      installments: (installments || []) as any,
+      loans: (loans || []) as any,
+      clients: (clients || []) as any,
+      supportTickets: (supportTickets || []) as any,
+      readIds,
+    });
+
+    setNotifications(mapped);
   }
 
   const markAsRead = async (id: string) => {
-    await supabase.from('notifications').update({ is_read: true }).eq('id', id);
     setNotifications(prev => prev.map(n => n.id === id ? { ...n, isRead: true } : n));
+    const current = new Set(JSON.parse(localStorage.getItem(readStorageKey) || '[]'));
+    current.add(id);
+    localStorage.setItem(readStorageKey, JSON.stringify(Array.from(current)));
   };
 
   const markAllAsRead = async () => {
     if (!user) return;
-    await supabase.from('notifications').update({ is_read: true }).eq('user_id', user.id);
     setNotifications(prev => prev.map(n => ({ ...n, isRead: true })));
+    localStorage.setItem(readStorageKey, JSON.stringify(notifications.map((notification) => notification.id)));
   };
 
   const clearAll = async () => {
     if (!user) return;
-    await supabase.from('notifications').delete().eq('user_id', user.id);
+    localStorage.setItem(readStorageKey, JSON.stringify(notifications.map((notification) => notification.id)));
     setNotifications([]);
   };
 
   const unreadCount = notifications.filter(n => !n.isRead).length;
+
+  const handleSearchSubmit = () => {
+    const query = searchTerm.trim();
+
+    if (!query) return;
+
+    navigate(`/search?q=${encodeURIComponent(query)}`);
+  };
+
+  const handleOpenNotification = (notification: Notification) => {
+    const route = (notification as Notification & { route?: string }).route || '/activity';
+    setIsNotificationsOpen(false);
+    navigate(route);
+  };
+
+  const handleViewAllActivity = () => {
+    setIsNotificationsOpen(false);
+    navigate('/activity');
+  };
+
+  useEffect(() => {
+    if (!location.pathname.startsWith('/search')) {
+      return;
+    }
+
+    const params = new URLSearchParams(location.search);
+    setSearchTerm(params.get('q') || '');
+  }, [location.pathname, location.search]);
 
   return (
     <>
@@ -89,9 +187,22 @@ export function Header({ title, onMenuClick, children }: HeaderProps) {
             <Search className="size-4 text-slate-400 mr-2" />
             <input 
               type="text" 
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  handleSearchSubmit();
+                }
+              }}
               placeholder="Search..." 
               className="bg-transparent border-none focus:ring-0 text-sm w-32 xl:w-64 text-slate-600 placeholder:text-slate-400 font-medium" 
             />
+            <button
+              onClick={handleSearchSubmit}
+              className="ml-2 text-[10px] font-black uppercase tracking-widest text-primary-600"
+            >
+              Ir
+            </button>
           </div>
           
           <div className="flex items-center gap-2 lg:gap-3">
@@ -117,6 +228,8 @@ export function Header({ title, onMenuClick, children }: HeaderProps) {
                 onMarkAsRead={markAsRead}
                 onMarkAllAsRead={markAllAsRead}
                 onClearAll={clearAll}
+                onOpenNotification={handleOpenNotification}
+                onViewAll={handleViewAllActivity}
               />
             </div>
 
@@ -143,10 +256,14 @@ export function Header({ title, onMenuClick, children }: HeaderProps) {
         </div>
       </header>
 
-      <UserProfileModal 
-        isOpen={isProfileOpen} 
-        onClose={() => setIsProfileOpen(false)} 
-      />
+      {isProfileOpen && (
+        <Suspense fallback={null}>
+          <UserProfileModal 
+            isOpen={isProfileOpen} 
+            onClose={() => setIsProfileOpen(false)} 
+          />
+        </Suspense>
+      )}
     </>
   );
 }

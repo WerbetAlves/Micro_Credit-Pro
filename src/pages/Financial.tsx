@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Search, Landmark, Wallet, Plus, ArrowUpRight, ArrowDownRight, X, Filter, MoreVertical, Pencil, Trash2, RotateCcw, AlertTriangle } from 'lucide-react';
 import { Sidebar } from '../components/Sidebar';
 import { WalletManager } from '../components/WalletManager';
@@ -9,6 +9,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../lib/utils';
 import { ResponsiveContainer, Tooltip, AreaChart, Area, XAxis } from 'recharts';
 import { parseAppDate } from '../lib/date';
+import { isLoanWrittenOff } from '../lib/loanWriteOff';
 
 type TransactionCategory = 'loan_disbursement' | 'payment_received' | 'fee' | 'adjustment' | 'other';
 type TransactionType = 'income' | 'expense';
@@ -26,6 +27,9 @@ interface Transaction {
   clients?: {
     full_name: string;
   };
+  loans?: {
+    notes?: string | null;
+  };
 }
 
 interface WalletOption {
@@ -34,8 +38,22 @@ interface WalletOption {
   balance?: number;
 }
 
+interface ClientFilterOption {
+  id: string;
+  name: string;
+}
+
 type TransactionOrigin = 'manual' | 'loan' | 'system';
-type ReversalState = 'normal' | 'reversal' | 'reversed_original';
+
+const isLoanWriteOffTransaction = (tx: Pick<Transaction, 'category' | 'description' | 'type'>) =>
+  tx.category === 'adjustment' &&
+  tx.type === 'expense' &&
+  tx.description.toLowerCase().includes('baixa do emprestimo');
+
+const isRecoveryFromWrittenOffLoan = (tx: Transaction) =>
+  tx.type === 'income' &&
+  !!tx.loan_id &&
+  isLoanWrittenOff(tx.loans?.notes);
 
 const getSignedAmount = (tx: Pick<Transaction, 'type' | 'amount'>) => (
   tx.type === 'income' ? Number(tx.amount) : -Number(tx.amount)
@@ -57,12 +75,6 @@ const getTransactionOrigin = (tx: Transaction): TransactionOrigin => {
   return 'manual';
 };
 
-const getReversalState = (description: string): ReversalState => {
-  if (isReversalDescription(description)) return 'reversal';
-  if (isReversedOriginalDescription(description)) return 'reversed_original';
-  return 'normal';
-};
-
 export function Financial() {
   const { t, formatCurrency, formatDate } = useLanguage();
   const { user } = useAuth();
@@ -74,6 +86,9 @@ export function Financial() {
   const [filterCategory, setFilterCategory] = useState<string>('all');
   const [filterWalletId, setFilterWalletId] = useState<string>('all');
   const [filterOrigin, setFilterOrigin] = useState<string>('all');
+  const [filterClientId, setFilterClientId] = useState<string>('all');
+  const [filterStartDate, setFilterStartDate] = useState('');
+  const [filterEndDate, setFilterEndDate] = useState('');
 
   const [isTxModalOpen, setIsTxModalOpen] = useState(false);
   const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
@@ -83,31 +98,18 @@ export function Financial() {
   const [txDescription, setTxDescription] = useState('');
   const [txWalletId, setTxWalletId] = useState('');
   const [availableWallets, setAvailableWallets] = useState<WalletOption[]>([]);
+  const [availableClients, setAvailableClients] = useState<ClientFilterOption[]>([]);
   const [txError, setTxError] = useState('');
   const [submittingTx, setSubmittingTx] = useState(false);
   const [menuOpenId, setMenuOpenId] = useState<string | null>(null);
 
   const [stats, setStats] = useState({ balance: 0, inflow: 0, outflow: 0 });
 
-  const actionMenuRef = useRef<HTMLDivElement | null>(null);
-
   useEffect(() => {
     fetchTransactions();
     fetchWallets();
+    fetchClients();
   }, [user]);
-
-  useEffect(() => {
-    if (!menuOpenId) return;
-
-    const handleOutsideClick = (event: MouseEvent) => {
-      if (actionMenuRef.current && !actionMenuRef.current.contains(event.target as Node)) {
-        setMenuOpenId(null);
-      }
-    };
-
-    document.addEventListener('mousedown', handleOutsideClick);
-    return () => document.removeEventListener('mousedown', handleOutsideClick);
-  }, [menuOpenId]);
 
   async function fetchWallets() {
     if (!user) return;
@@ -122,6 +124,29 @@ export function Financial() {
       if (data) setAvailableWallets(data);
     } catch (err) {
       console.error('Error fetching wallets for selection:', err);
+    }
+  }
+
+  async function fetchClients() {
+    if (!user) return;
+
+    try {
+      const { data } = await supabase
+        .from('clients')
+        .select('id, full_name')
+        .eq('user_id', user.id)
+        .order('full_name', { ascending: true });
+
+      if (data) {
+        setAvailableClients(
+          data.map((client: any) => ({
+            id: client.id,
+            name: client.full_name,
+          }))
+        );
+      }
+    } catch (err) {
+      console.error('Error fetching clients for financial filters:', err);
     }
   }
 
@@ -160,6 +185,9 @@ export function Financial() {
           *,
           clients (
             full_name
+          ),
+          loans (
+            notes
           )
         `)
         .eq('user_id', user.id)
@@ -348,7 +376,8 @@ export function Financial() {
       throw new Error('Não é possível estornar uma concessão que já possui parcelas pagas.');
     }
 
-    if ((installments || []).length > 0) {
+    const unpaidInstallmentIds = (installments || []).map((inst: any) => inst.id);
+    if (unpaidInstallmentIds.length > 0) {
       const { error: deleteInstallmentsError } = await supabase
         .from('installments')
         .delete()
@@ -427,17 +456,130 @@ export function Financial() {
   const filteredTransactions = useMemo(() => {
     return transactions.filter((tx) => {
       const origin = getTransactionOrigin(tx);
+      const isWriteOff = isLoanWriteOffTransaction(tx);
+      const createdDate = tx.created_at.slice(0, 10);
       const matchesSearch =
         tx.description?.toLowerCase().includes(search.toLowerCase()) ||
         tx.clients?.full_name?.toLowerCase().includes(search.toLowerCase()) ||
         getWalletName(tx.wallet_id).toLowerCase().includes(search.toLowerCase());
       const matchesType = filterType === 'all' || tx.type === filterType;
-      const matchesCategory = filterCategory === 'all' || tx.category === filterCategory;
+      const matchesCategory =
+        filterCategory === 'all' ||
+        (filterCategory === 'loan_write_off' ? isWriteOff : tx.category === filterCategory);
       const matchesWallet = filterWalletId === 'all' || tx.wallet_id === filterWalletId;
       const matchesOrigin = filterOrigin === 'all' || origin === filterOrigin;
-      return matchesSearch && matchesType && matchesCategory && matchesWallet && matchesOrigin;
+      const matchesClient = filterClientId === 'all' || tx.client_id === filterClientId;
+      const matchesStartDate = !filterStartDate || createdDate >= filterStartDate;
+      const matchesEndDate = !filterEndDate || createdDate <= filterEndDate;
+
+      return (
+        matchesSearch &&
+        matchesType &&
+        matchesCategory &&
+        matchesWallet &&
+        matchesOrigin &&
+        matchesClient &&
+        matchesStartDate &&
+        matchesEndDate
+      );
     });
-  }, [transactions, search, filterType, filterCategory, filterWalletId, filterOrigin, availableWallets]);
+  }, [transactions, search, filterType, filterCategory, filterWalletId, filterOrigin, filterClientId, filterStartDate, filterEndDate, availableWallets]);
+
+  const writeOffStats = useMemo(() => {
+    const writeOffTransactions = filteredTransactions.filter(isLoanWriteOffTransaction);
+    const recoveredTransactions = filteredTransactions.filter(isRecoveryFromWrittenOffLoan);
+    const amount = writeOffTransactions.reduce((acc, tx) => acc + Number(tx.amount || 0), 0);
+    const recovered = recoveredTransactions.reduce((acc, tx) => acc + Number(tx.amount || 0), 0);
+
+    return {
+      count: writeOffTransactions.length,
+      amount,
+      recovered,
+      netLoss: Math.max(amount - recovered, 0),
+      transactions: writeOffTransactions,
+    };
+  }, [filteredTransactions]);
+
+  const executiveBreakdown = useMemo(() => {
+    const byClient = new Map<string, { name: string; writeOff: number; recovered: number }>();
+    const byWallet = new Map<string, { name: string; writeOff: number; recovered: number }>();
+
+    filteredTransactions.forEach((tx) => {
+      const clientKey = tx.client_id || 'no-client';
+      const clientName = tx.clients?.full_name || 'Sem cliente';
+      const walletKey = tx.wallet_id || 'no-wallet';
+      const walletName = getWalletName(tx.wallet_id);
+
+      if (!byClient.has(clientKey)) {
+        byClient.set(clientKey, { name: clientName, writeOff: 0, recovered: 0 });
+      }
+
+      if (!byWallet.has(walletKey)) {
+        byWallet.set(walletKey, { name: walletName, writeOff: 0, recovered: 0 });
+      }
+
+      if (isLoanWriteOffTransaction(tx)) {
+        byClient.get(clientKey)!.writeOff += Number(tx.amount || 0);
+        byWallet.get(walletKey)!.writeOff += Number(tx.amount || 0);
+      }
+
+      if (isRecoveryFromWrittenOffLoan(tx)) {
+        byClient.get(clientKey)!.recovered += Number(tx.amount || 0);
+        byWallet.get(walletKey)!.recovered += Number(tx.amount || 0);
+      }
+    });
+
+    const normalize = (entry: { name: string; writeOff: number; recovered: number }) => ({
+      ...entry,
+      netLoss: Math.max(entry.writeOff - entry.recovered, 0),
+    });
+
+    return {
+      clients: Array.from(byClient.values())
+        .map(normalize)
+        .filter((item) => item.writeOff > 0 || item.recovered > 0)
+        .sort((a, b) => b.netLoss - a.netLoss)
+        .slice(0, 5),
+      wallets: Array.from(byWallet.values())
+        .map(normalize)
+        .filter((item) => item.writeOff > 0 || item.recovered > 0)
+        .sort((a, b) => b.netLoss - a.netLoss)
+        .slice(0, 5),
+    };
+  }, [filteredTransactions, availableWallets]);
+
+  const exportWriteOffsCsv = () => {
+    const rows = writeOffStats.transactions.map((tx) => ({
+      data: formatDate(tx.created_at),
+      cliente: tx.clients?.full_name || '',
+      descricao: tx.description || '',
+      carteira: getWalletName(tx.wallet_id),
+      valor: Number(tx.amount || 0).toFixed(2),
+    }));
+
+    if (!rows.length) {
+      alert('Nao ha baixas para exportar no momento.');
+      return;
+    }
+
+    const header = ['data', 'cliente', 'descricao', 'carteira', 'valor'];
+    const csv = [
+      header.join(';'),
+      ...rows.map((row) =>
+        header
+          .map((field) => `"${String(row[field as keyof typeof row]).replaceAll('"', '""')}"`)
+          .join(';')
+      ),
+    ].join('\n');
+
+    const blob = new Blob([`\uFEFF${csv}`], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `baixas-emprestimos-${new Date().toISOString().slice(0, 10)}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+  };
 
   const chartData = Array.from({ length: 7 }).map((_, i) => {
     const date = new Date();
@@ -527,6 +669,55 @@ export function Financial() {
             </motion.button>
           </div>
 
+          <div className="grid grid-cols-1 lg:grid-cols-[1.2fr,0.8fr] gap-6">
+            <div className="bg-white rounded-[2rem] border border-slate-50 shadow-sm p-6 lg:p-8">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Baixas reconhecidas</p>
+                  <h3 className="mt-2 text-2xl font-black tracking-tight text-slate-900">{formatCurrency(writeOffStats.amount)}</h3>
+                  <p className="mt-2 text-sm font-medium text-slate-500">
+                    Total de perdas ja baixadas manualmente na carteira.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setFilterCategory((prev) => (prev === 'loan_write_off' ? 'all' : 'loan_write_off'))}
+                  className={cn(
+                    'rounded-2xl px-4 py-3 text-[10px] font-black uppercase tracking-[0.18em] transition-all',
+                    filterCategory === 'loan_write_off' ? 'bg-rose-600 text-white shadow-lg shadow-rose-200' : 'bg-rose-50 text-rose-600 hover:bg-rose-100'
+                  )}
+                >
+                  {filterCategory === 'loan_write_off' ? 'Remover filtro' : 'Ver baixas'}
+                </button>
+              </div>
+              <div className="mt-5 flex flex-wrap gap-3">
+                <button
+                  type="button"
+                  onClick={exportWriteOffsCsv}
+                  className="rounded-2xl bg-slate-900 px-4 py-3 text-[10px] font-black uppercase tracking-[0.18em] text-white shadow-lg shadow-slate-200 transition-all hover:bg-slate-800"
+                >
+                  Exportar CSV
+                </button>
+                <div className="rounded-2xl bg-slate-50 px-4 py-3">
+                  <p className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-400">Recuperado depois</p>
+                  <p className="mt-1 text-sm font-black text-emerald-600">{formatCurrency(writeOffStats.recovered)}</p>
+                </div>
+                <div className="rounded-2xl bg-slate-50 px-4 py-3">
+                  <p className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-400">Perda liquida</p>
+                  <p className="mt-1 text-sm font-black text-rose-600">{formatCurrency(writeOffStats.netLoss)}</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="bg-slate-900 rounded-[2rem] shadow-xl shadow-slate-200 p-6 lg:p-8 text-white">
+              <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Auditoria</p>
+              <h3 className="mt-2 text-2xl font-black tracking-tight">{writeOffStats.count}</h3>
+              <p className="mt-2 text-sm font-medium text-slate-300">
+                lançamentos de baixa registrados no financeiro para conferência e histórico.
+              </p>
+            </div>
+          </div>
+
           <WalletManager />
 
           <div className="bg-white rounded-[2.5rem] p-6 lg:p-10 border border-slate-50 shadow-sm">
@@ -553,6 +744,56 @@ export function Financial() {
           </div>
 
           <div className="bg-white rounded-[2.5rem] border border-slate-50 shadow-sm overflow-hidden">
+            <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 border-b border-slate-100 bg-slate-50/30 p-6 lg:p-8">
+              <div className="rounded-[2rem] border border-slate-100 bg-white p-5">
+                <div className="flex items-center justify-between">
+                  <h4 className="text-sm font-black tracking-tight text-slate-900">Perda liquida por cliente</h4>
+                  <span className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-400">Top 5</span>
+                </div>
+                <div className="mt-4 space-y-3">
+                  {executiveBreakdown.clients.length === 0 ? (
+                    <p className="text-xs font-medium text-slate-400">Nenhum cliente com baixa dentro do filtro atual.</p>
+                  ) : (
+                    executiveBreakdown.clients.map((client) => (
+                      <div key={client.name} className="flex items-center justify-between rounded-2xl bg-slate-50 px-4 py-3">
+                        <div>
+                          <p className="text-sm font-bold text-slate-900">{client.name}</p>
+                          <p className="mt-1 text-[10px] font-black uppercase tracking-[0.18em] text-slate-400">
+                            Baixado {formatCurrency(client.writeOff)} • Recuperado {formatCurrency(client.recovered)}
+                          </p>
+                        </div>
+                        <span className="text-sm font-black text-rose-600">{formatCurrency(client.netLoss)}</span>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+
+              <div className="rounded-[2rem] border border-slate-100 bg-white p-5">
+                <div className="flex items-center justify-between">
+                  <h4 className="text-sm font-black tracking-tight text-slate-900">Perda liquida por carteira</h4>
+                  <span className="text-[10px] font-black uppercase tracking-[0.18em] text-slate-400">Top 5</span>
+                </div>
+                <div className="mt-4 space-y-3">
+                  {executiveBreakdown.wallets.length === 0 ? (
+                    <p className="text-xs font-medium text-slate-400">Nenhuma carteira com baixa dentro do filtro atual.</p>
+                  ) : (
+                    executiveBreakdown.wallets.map((wallet) => (
+                      <div key={wallet.name} className="flex items-center justify-between rounded-2xl bg-slate-50 px-4 py-3">
+                        <div>
+                          <p className="text-sm font-bold text-slate-900">{wallet.name}</p>
+                          <p className="mt-1 text-[10px] font-black uppercase tracking-[0.18em] text-slate-400">
+                            Baixado {formatCurrency(wallet.writeOff)} • Recuperado {formatCurrency(wallet.recovered)}
+                          </p>
+                        </div>
+                        <span className="text-sm font-black text-rose-600">{formatCurrency(wallet.netLoss)}</span>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+            </div>
+
             <div className="p-6 lg:p-8 border-b border-slate-100 space-y-4">
               <div className="flex flex-col md:flex-row gap-4 items-center justify-between">
                 <h3 className="text-lg font-bold text-slate-900">{t.allTransactions}</h3>
@@ -580,6 +821,7 @@ export function Financial() {
                   className="bg-slate-50 border-none rounded-xl px-4 py-2 text-xs font-bold text-slate-600 outline-none"
                 >
                   <option value="all">{t.filterByCategory}</option>
+                  <option value="loan_write_off">Baixas de emprestimo</option>
                   {categories.map((category) => (
                     <option key={category} value={category}>
                       {t[category] || category}
@@ -610,6 +852,47 @@ export function Financial() {
                     </option>
                   ))}
                 </select>
+
+                <select
+                  value={filterClientId}
+                  onChange={(e) => setFilterClientId(e.target.value)}
+                  className="bg-slate-50 border-none rounded-xl px-4 py-2 text-xs font-bold text-slate-600 outline-none"
+                >
+                  <option value="all">Todos os clientes</option>
+                  {availableClients.map((client) => (
+                    <option key={client.id} value={client.id}>
+                      {client.name}
+                    </option>
+                  ))}
+                </select>
+
+                <input
+                  type="date"
+                  value={filterStartDate}
+                  onChange={(e) => setFilterStartDate(e.target.value)}
+                  className="bg-slate-50 border-none rounded-xl px-4 py-2 text-xs font-bold text-slate-600 outline-none"
+                />
+
+                <input
+                  type="date"
+                  value={filterEndDate}
+                  onChange={(e) => setFilterEndDate(e.target.value)}
+                  className="bg-slate-50 border-none rounded-xl px-4 py-2 text-xs font-bold text-slate-600 outline-none"
+                />
+
+                {(filterClientId !== 'all' || filterStartDate || filterEndDate) && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setFilterClientId('all');
+                      setFilterStartDate('');
+                      setFilterEndDate('');
+                    }}
+                    className="rounded-xl bg-slate-900 px-4 py-2 text-[10px] font-black uppercase tracking-[0.18em] text-white"
+                  >
+                    Limpar periodo
+                  </button>
+                )}
               </div>
 
               {availableWallets.length > 0 && (
@@ -670,19 +953,11 @@ export function Financial() {
                       const origin = getTransactionOrigin(tx);
                       const isManual = origin === 'manual';
                       const isSystem = origin !== 'manual';
-                      const reversalState = getReversalState(tx.description);
-                      const isReversed = reversalState !== 'normal';
+                      const isReversed = isReversalDescription(tx.description) || isReversedOriginalDescription(tx.description);
+                      const isWriteOff = isLoanWriteOffTransaction(tx);
 
                       return (
-                        <tr
-                          key={tx.id}
-                          className={cn(
-                            'transition-colors',
-                            reversalState === 'reversal' && 'bg-emerald-50/35 hover:bg-emerald-50/60',
-                            reversalState === 'reversed_original' && 'bg-amber-50/40 hover:bg-amber-50/70',
-                            reversalState === 'normal' && 'hover:bg-slate-50/50'
-                          )}
-                        >
+                        <tr key={tx.id} className="hover:bg-slate-50/50 transition-colors">
                           <td className="px-6 py-5 whitespace-nowrap">
                             <span className="text-[11px] font-bold text-slate-500 uppercase tracking-widest">
                               {formatDate(tx.created_at)}
@@ -694,19 +969,12 @@ export function Financial() {
                                 {tx.type === 'income' ? <ArrowUpRight className="size-4" /> : <ArrowDownRight className="size-4" />}
                               </div>
                               <div>
-                                <div className="flex items-center gap-2 flex-wrap">
-                                  <p className="text-xs font-bold text-slate-900 leading-tight">{tx.description || tx.category}</p>
-                                  {reversalState === 'reversal' && (
-                                    <span className="text-[9px] font-black uppercase tracking-widest px-2 py-1 rounded-full bg-emerald-100 text-emerald-700">
-                                      Estorno
-                                    </span>
-                                  )}
-                                  {reversalState === 'reversed_original' && (
-                                    <span className="text-[9px] font-black uppercase tracking-widest px-2 py-1 rounded-full bg-amber-100 text-amber-700">
-                                      Original Estornada
-                                    </span>
-                                  )}
-                                </div>
+                                <p className="text-xs font-bold text-slate-900 leading-tight">{tx.description || tx.category}</p>
+                                {isWriteOff && (
+                                  <p className="mt-1 text-[10px] font-black uppercase tracking-widest text-rose-500">
+                                    Baixa reconhecida no capital
+                                  </p>
+                                )}
                                 {tx.clients?.full_name && (
                                   <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mt-1">
                                     {tx.clients.full_name}
@@ -716,23 +984,15 @@ export function Financial() {
                             </div>
                           </td>
                           <td className="px-6 py-5">
-                            <span className="text-[10px] font-black text-slate-400 uppercase tracking-[0.15em] bg-slate-50 px-2 py-1 rounded-md">
-                              {t[tx.category] || tx.category}
+                            <span className={cn(
+                              'text-[10px] font-black uppercase tracking-[0.15em] px-2 py-1 rounded-md',
+                              isWriteOff ? 'bg-rose-50 text-rose-600' : 'bg-slate-50 text-slate-400'
+                            )}>
+                              {isWriteOff ? 'Baixa' : (t[tx.category] || tx.category)}
                             </span>
                           </td>
                           <td className="px-6 py-5">
-                            <button
-                              type="button"
-                              onClick={() => setFilterWalletId((prev) => (prev === tx.wallet_id ? 'all' : tx.wallet_id || 'all'))}
-                              className={cn(
-                                'text-xs font-bold rounded-lg px-2 py-1 transition-all',
-                                filterWalletId === tx.wallet_id
-                                  ? 'bg-emerald-100 text-emerald-700'
-                                  : 'text-slate-600 hover:bg-slate-100'
-                              )}
-                            >
-                              {getWalletName(tx.wallet_id)}
-                            </button>
+                            <span className="text-xs font-bold text-slate-600">{getWalletName(tx.wallet_id)}</span>
                           </td>
                           <td className="px-6 py-5">
                             <span
@@ -754,7 +1014,7 @@ export function Financial() {
                             </span>
                           </td>
                           <td className="px-6 py-5 text-right">
-                            <div ref={menuOpenId === tx.id ? actionMenuRef : null} className="relative inline-flex justify-end">
+                            <div className="relative inline-flex justify-end">
                               <button
                                 type="button"
                                 onClick={() => setMenuOpenId((prev) => (prev === tx.id ? null : tx.id))}
