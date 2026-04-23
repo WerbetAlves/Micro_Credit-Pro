@@ -8,6 +8,12 @@ const extractText = (output = []) => {
     .trim();
 };
 
+const formatMessageContent = (message) => {
+  const contentType = message.role === 'assistant' ? 'output_text' : 'input_text';
+
+  return [{ type: contentType, text: message.content }];
+};
+
 const buildPayload = (body, env) => {
   const payload = {
     model: env.OPENAI_MODEL || 'gpt-4.1-mini',
@@ -25,7 +31,7 @@ const buildPayload = (body, env) => {
     payload.input = [
       ...(body.messages || []).map((message) => ({
         role: message.role,
-        content: [{ type: 'input_text', text: message.content }],
+        content: formatMessageContent(message),
       })),
       {
         role: 'user',
