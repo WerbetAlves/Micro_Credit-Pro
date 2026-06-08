@@ -7,6 +7,9 @@ import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../lib/supabase';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../lib/utils';
+import { getPlanLimitMessage } from '../lib/plans';
+import { fetchPlanContext, type PlanContext } from '../lib/subscription';
+import { useSearchParams } from 'react-router-dom';
 
 interface Client {
   id: string;
@@ -27,17 +30,19 @@ interface Client {
 export function Clients() {
   const { t } = useLanguage();
   const { user } = useAuth();
+  const [searchParams] = useSearchParams();
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [clients, setClients] = useState<Client[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
-  const [profile, setProfile] = useState<any>(null);
+  const [planContext, setPlanContext] = useState<PlanContext | null>(null);
   
   // Modal states
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingClient, setEditingClient] = useState<Client | null>(null);
   const [formLoading, setFormLoading] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+  const highlightedClientId = searchParams.get('client') || '';
 
   // Form states
   const [formData, setFormData] = useState<{
@@ -68,13 +73,21 @@ export function Clients() {
 
   useEffect(() => {
     fetchClients();
-    fetchProfile();
+    fetchPlanData();
   }, [user]);
 
-  async function fetchProfile() {
+  useEffect(() => {
+    setSearch(searchParams.get('search') || '');
+  }, [searchParams]);
+
+  async function fetchPlanData() {
     if (!user) return;
-    const { data } = await supabase.from('profiles').select('*').single();
-    if (data) setProfile(data);
+    try {
+      const context = await fetchPlanContext(user.id);
+      setPlanContext(context);
+    } catch (error) {
+      console.error('Error fetching plan context:', error);
+    }
   }
 
   async function fetchClients() {
@@ -114,8 +127,9 @@ export function Clients() {
       });
     } else {
       // Bloqueio de Plano Grátis
-      if ((profile?.plan_type || 'free') === 'free' && clients.length >= 3) {
-        alert(t.freePlanLimitReached);
+      const limit = planContext?.plan?.limits?.clients;
+      if (typeof limit === 'number' && clients.length >= limit) {
+        alert(getPlanLimitMessage(planContext?.plan?.name || 'Plano atual', 'clients', limit));
         return;
       }
 
@@ -159,6 +173,11 @@ export function Clients() {
           .eq('id', editingClient.id);
         if (error) throw error;
       } else {
+        const limit = planContext?.plan?.limits?.clients;
+        if (typeof limit === 'number' && clients.length >= limit) {
+          throw new Error(getPlanLimitMessage(planContext?.plan?.name || 'Plano atual', 'clients', limit));
+        }
+
         const { error } = await supabase
           .from('clients')
           .insert([clientData]);
@@ -167,6 +186,7 @@ export function Clients() {
       
       setIsModalOpen(false);
       fetchClients();
+      fetchPlanData();
     } catch (err: any) {
       setFormError(err.message);
     } finally {
@@ -191,6 +211,7 @@ export function Clients() {
   };
 
   const filteredClients = clients.filter(c => 
+    c.id === highlightedClientId ||
     c.full_name.toLowerCase().includes(search.toLowerCase()) ||
     c.email?.toLowerCase().includes(search.toLowerCase()) ||
     c.phone.includes(search)
@@ -266,7 +287,15 @@ export function Clients() {
                     </tr>
                   ) : (
                     filteredClients.map((client) => (
-                      <tr key={client.id} className="hover:bg-slate-50/50 transition-colors group">
+                      <tr
+                        key={client.id}
+                        className={cn(
+                          "transition-colors group",
+                          client.id === highlightedClientId
+                            ? "bg-emerald-50/70 ring-1 ring-inset ring-emerald-200"
+                            : "hover:bg-slate-50/50"
+                        )}
+                      >
                         <td className="px-6 py-5">
                           <div className="flex items-center gap-4">
                             <div className="w-10 h-10 rounded-xl bg-emerald-50 flex items-center justify-center shrink-0">

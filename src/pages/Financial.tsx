@@ -10,6 +10,7 @@ import { cn } from '../lib/utils';
 import { ResponsiveContainer, Tooltip, AreaChart, Area, XAxis } from 'recharts';
 import { parseAppDate } from '../lib/date';
 import { isLoanWrittenOff } from '../lib/loanWriteOff';
+import { useSearchParams } from 'react-router-dom';
 
 type TransactionCategory = 'loan_disbursement' | 'payment_received' | 'fee' | 'adjustment' | 'other';
 type TransactionType = 'income' | 'expense';
@@ -78,6 +79,7 @@ const getTransactionOrigin = (tx: Transaction): TransactionOrigin => {
 export function Financial() {
   const { t, formatCurrency, formatDate } = useLanguage();
   const { user } = useAuth();
+  const [searchParams] = useSearchParams();
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [loading, setLoading] = useState(true);
@@ -110,6 +112,13 @@ export function Financial() {
     fetchWallets();
     fetchClients();
   }, [user]);
+
+  useEffect(() => {
+    setSearch(searchParams.get('search') || '');
+    if (searchParams.get('wallet')) {
+      setFilterWalletId(searchParams.get('wallet') || 'all');
+    }
+  }, [searchParams]);
 
   async function fetchWallets() {
     if (!user) return;

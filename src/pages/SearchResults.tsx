@@ -1,21 +1,25 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useSearchParams, useNavigate } from 'react-router-dom';
-import { Search, Users, Landmark, Wallet, CalendarDays, LifeBuoy } from 'lucide-react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import { CalendarDays, Landmark, LifeBuoy, Search, Users, Wallet } from 'lucide-react';
 import { Sidebar } from '../components/Sidebar';
 import { Header } from '../components/Header';
 import { useAuth } from '../contexts/AuthContext';
 import { useLanguage } from '../contexts/LanguageContext';
+import { getInstallmentDisplayStatus } from '../lib/installments';
 import { supabase } from '../lib/supabase';
+
+type SearchItem = {
+  id: string;
+  title: string;
+  subtitle: string;
+  target: string;
+};
 
 type SearchSection = {
   title: string;
   route: string;
-  icon: any;
-  items: Array<{
-    id: string;
-    title: string;
-    subtitle: string;
-  }>;
+  icon: React.ComponentType<{ className?: string }>;
+  items: SearchItem[];
 };
 
 export function SearchResults() {
@@ -29,7 +33,7 @@ export function SearchResults() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetchResults();
+    void fetchResults();
   }, [user, query]);
 
   async function fetchResults() {
@@ -73,6 +77,7 @@ export function SearchResults() {
               id: client.id,
               title: client.full_name,
               subtitle: `${client.phone}${client.email ? ` • ${client.email}` : ''}`,
+              target: `/clients?client=${encodeURIComponent(client.id)}&search=${encodeURIComponent(client.full_name)}`,
             })),
         },
         {
@@ -90,6 +95,7 @@ export function SearchResults() {
               id: loan.id,
               title: loan.clients?.full_name || 'Emprestimo sem cliente',
               subtitle: `${formatCurrency(Number(loan.principal_amount || 0))} • ${loan.status}`,
+              target: `/loans?loan=${encodeURIComponent(loan.id)}&search=${encodeURIComponent(loan.clients?.full_name || '')}`,
             })),
         },
         {
@@ -107,6 +113,7 @@ export function SearchResults() {
               id: wallet.id,
               title: wallet.name,
               subtitle: `${formatCurrency(Number(wallet.balance || 0))} • ${wallet.type}`,
+              target: `/financial?wallet=${encodeURIComponent(wallet.id)}&search=${encodeURIComponent(wallet.name)}`,
             })),
         },
         {
@@ -114,20 +121,27 @@ export function SearchResults() {
           route: '/payments',
           icon: CalendarDays,
           items: ((installments || []) as any[])
-            .filter((installment) =>
-              [
+            .filter((installment) => {
+              const displayStatus = getInstallmentDisplayStatus(installment);
+
+              return [
                 installment.loans?.clients?.full_name || '',
-                installment.status,
+                displayStatus,
                 installment.due_date,
                 String(installment.amount || ''),
-              ].some((value) => String(value).toLowerCase().includes(normalized))
-            )
+              ].some((value) => String(value).toLowerCase().includes(normalized));
+            })
             .slice(0, 8)
-            .map((installment) => ({
-              id: installment.id,
-              title: installment.loans?.clients?.full_name || 'Parcela',
-              subtitle: `${formatCurrency(Number(installment.amount || 0))} • ${installment.status} • ${installment.due_date}`,
-            })),
+            .map((installment) => {
+              const displayStatus = getInstallmentDisplayStatus(installment);
+
+              return {
+                id: installment.id,
+                title: installment.loans?.clients?.full_name || 'Parcela',
+                subtitle: `${formatCurrency(Number(installment.amount || 0))} • ${displayStatus} • ${installment.due_date}`,
+                target: `/payments?installment=${encodeURIComponent(installment.id)}&search=${encodeURIComponent(installment.loans?.clients?.full_name || '')}`,
+              };
+            }),
         },
         {
           title: 'Suporte',
@@ -144,6 +158,7 @@ export function SearchResults() {
               id: ticket.id,
               title: ticket.subject,
               subtitle: ticket.status,
+              target: `/support?ticket=${encodeURIComponent(ticket.id)}&search=${encodeURIComponent(ticket.subject)}`,
             })),
         },
       ].filter((section) => section.items.length > 0);
@@ -169,14 +184,14 @@ export function SearchResults() {
       <main className="flex-1 lg:ml-72 min-h-screen pb-20 w-full transition-all duration-300">
         <Header title="Busca Global" onMenuClick={() => setIsSidebarOpen(true)} />
 
-        <div className="px-4 md:px-6 lg:px-8 py-6 lg:py-10 w-full max-w-[1200px] mx-auto space-y-6">
-          <div className="bg-white rounded-[2rem] border border-slate-100 shadow-sm p-6 lg:p-8">
+        <div className="mx-auto w-full max-w-[1200px] space-y-6 px-4 py-6 md:px-6 lg:px-8 lg:py-10">
+          <div className="rounded-[2rem] border border-slate-100 bg-white p-6 shadow-sm lg:p-8">
             <div className="flex items-center gap-3">
-              <div className="size-12 rounded-2xl bg-slate-50 flex items-center justify-center text-emerald-500">
+              <div className="flex size-12 items-center justify-center rounded-2xl bg-slate-50 text-emerald-500">
                 <Search className="size-5" />
               </div>
               <div>
-                <h2 className="text-lg lg:text-xl font-black text-slate-900">Resultados para “{query || '...'}”</h2>
+                <h2 className="text-lg font-black text-slate-900 lg:text-xl">Resultados para "{query || '...'}"</h2>
                 <p className="text-sm text-slate-500">{totalResults} resultado(s) encontrados.</p>
               </div>
             </div>
@@ -184,16 +199,16 @@ export function SearchResults() {
 
           {loading ? (
             Array.from({ length: 3 }).map((_, index) => (
-              <div key={index} className="bg-white rounded-[2rem] border border-slate-100 shadow-sm p-6 lg:p-8 animate-pulse">
-                <div className="h-4 bg-slate-100 rounded w-1/4 mb-6" />
+              <div key={index} className="animate-pulse rounded-[2rem] border border-slate-100 bg-white p-6 shadow-sm lg:p-8">
+                <div className="mb-6 h-4 w-1/4 rounded bg-slate-100" />
                 <div className="space-y-4">
-                  <div className="h-12 bg-slate-100 rounded-2xl" />
-                  <div className="h-12 bg-slate-100 rounded-2xl" />
+                  <div className="h-12 rounded-2xl bg-slate-100" />
+                  <div className="h-12 rounded-2xl bg-slate-100" />
                 </div>
               </div>
             ))
           ) : sections.length === 0 ? (
-            <div className="bg-white rounded-[2rem] border border-slate-100 shadow-sm p-12 text-center text-slate-400 font-medium">
+            <div className="rounded-[2rem] border border-slate-100 bg-white p-12 text-center font-medium text-slate-400">
               Nenhum resultado encontrado para sua busca.
             </div>
           ) : (
@@ -201,10 +216,10 @@ export function SearchResults() {
               const Icon = section.icon;
 
               return (
-                <div key={section.title} className="bg-white rounded-[2rem] border border-slate-100 shadow-sm overflow-hidden">
-                  <div className="px-6 lg:px-8 py-5 border-b border-slate-100 flex items-center justify-between gap-4">
+                <div key={section.title} className="overflow-hidden rounded-[2rem] border border-slate-100 bg-white shadow-sm">
+                  <div className="flex items-center justify-between gap-4 border-b border-slate-100 px-6 py-5 lg:px-8">
                     <div className="flex items-center gap-3">
-                      <div className="size-10 rounded-2xl bg-slate-50 flex items-center justify-center text-emerald-500">
+                      <div className="flex size-10 items-center justify-center rounded-2xl bg-slate-50 text-emerald-500">
                         <Icon className="size-4" />
                       </div>
                       <div>
@@ -224,11 +239,11 @@ export function SearchResults() {
                     {section.items.map((item) => (
                       <button
                         key={item.id}
-                        onClick={() => navigate(section.route)}
-                        className="w-full text-left px-6 lg:px-8 py-4 hover:bg-slate-50 transition-colors"
+                        onClick={() => navigate(item.target)}
+                        className="w-full px-6 py-4 text-left transition-colors hover:bg-slate-50 lg:px-8"
                       >
                         <p className="text-sm font-bold text-slate-900">{item.title}</p>
-                        <p className="text-sm text-slate-500 mt-1">{item.subtitle}</p>
+                        <p className="mt-1 text-sm text-slate-500">{item.subtitle}</p>
                       </button>
                     ))}
                   </div>

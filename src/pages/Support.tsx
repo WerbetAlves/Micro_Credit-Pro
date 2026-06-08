@@ -1,17 +1,17 @@
 import React, { useState, useEffect } from 'react';
-import {
-  MessageSquare,
-  Search,
-  Filter,
-  Plus,
-  Clock,
-  CheckCircle2,
-  AlertCircle,
-  User,
-  Tag,
-  MessageSquareText,
+import { 
+  MessageSquare, 
+  Search, 
+  Filter, 
+  Plus, 
+  Clock, 
+  CheckCircle2, 
+  AlertCircle, 
+  User, 
+  Tag, 
+  MessageSquareText, 
   Bot,
-  ArrowRight,
+  ArrowRight
 } from 'lucide-react';
 import { Sidebar } from '../components/Sidebar';
 import { Header } from '../components/Header';
@@ -21,6 +21,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { supabase } from '../lib/supabase';
 import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../lib/utils';
+import { useSearchParams } from 'react-router-dom';
 
 interface SupportTicket {
   id: string;
@@ -40,26 +41,42 @@ interface SupportTicket {
 export function Support() {
   const { t, formatDate } = useLanguage();
   const { user, profile } = useAuth();
+  const [searchParams] = useSearchParams();
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [tickets, setTickets] = useState<SupportTicket[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [filterStatus, setFilterStatus] = useState<string>('all');
-
+  
+  // Modal states
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [formLoading, setFormLoading] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [formSuccess, setFormSuccess] = useState<string | null>(null);
+  const highlightedTicketId = searchParams.get('ticket') || '';
 
   const [formData, setFormData] = useState({
     subject: '',
     description: '',
     priority: 'medium' as const,
-    category: 'technical' as const,
+    category: 'technical' as const
   });
 
   useEffect(() => {
     fetchTickets();
+  }, [user, profile]);
+
+  useEffect(() => {
+    setSearch(searchParams.get('search') || '');
+  }, [searchParams]);
+
+  useEffect(() => {
+    const handleTicketCreated = () => {
+      fetchTickets();
+    };
+
+    window.addEventListener('support-ticket-created', handleTicketCreated);
+    return () => window.removeEventListener('support-ticket-created', handleTicketCreated);
   }, [user, profile]);
 
   async function fetchTickets() {
@@ -67,7 +84,7 @@ export function Support() {
     setLoading(true);
     try {
       const isAdmin = profile?.is_admin || (user as any).role === 'admin' || user.user_metadata?.role === 'admin';
-
+      
       let query = supabase
         .from('support_tickets')
         .select(`
@@ -77,7 +94,7 @@ export function Support() {
             email
           )
         `);
-
+      
       if (!isAdmin) {
         query = query.eq('user_id', user.id);
       }
@@ -101,23 +118,21 @@ export function Support() {
     setFormSuccess(null);
 
     try {
-      const { error } = await supabase.from('support_tickets').insert([
-        {
-          user_id: user.id,
-          ...formData,
-          status: 'open',
-        },
-      ]);
+      const { error } = await supabase.from('support_tickets').insert([{
+        user_id: user.id,
+        ...formData,
+        status: 'open'
+      }]);
 
       if (error) throw error;
-
+      
       setIsModalOpen(false);
       setFormSuccess(t.ticketCreated);
       setFormData({
         subject: '',
         description: '',
         priority: 'medium',
-        category: 'technical',
+        category: 'technical'
       });
       fetchTickets();
     } catch (err: any) {
@@ -137,7 +152,7 @@ export function Support() {
         .from('support_tickets')
         .update({ status: newStatus })
         .eq('id', ticketId);
-
+      
       if (error) throw error;
       fetchTickets();
     } catch (err: any) {
@@ -145,39 +160,30 @@ export function Support() {
     }
   };
 
-  const filteredTickets = tickets.filter((ticket) => {
-    const matchesSearch =
-      ticket.subject.toLowerCase().includes(search.toLowerCase()) ||
-      ticket.description.toLowerCase().includes(search.toLowerCase());
-    const matchesStatus = filterStatus === 'all' || ticket.status === filterStatus;
+  const filteredTickets = tickets.filter(t => {
+    const matchesSearch = t.id === highlightedTicketId ||
+                          t.subject.toLowerCase().includes(search.toLowerCase()) || 
+                          t.description.toLowerCase().includes(search.toLowerCase());
+    const matchesStatus = filterStatus === 'all' || t.status === filterStatus;
     return matchesSearch && matchesStatus;
   });
 
   const getStatusIcon = (status: string) => {
     switch (status) {
-      case 'open':
-        return <Clock className="size-4 text-amber-500" />;
-      case 'in_progress':
-        return <AlertCircle className="size-4 text-blue-500" />;
-      case 'resolved':
-        return <CheckCircle2 className="size-4 text-emerald-500" />;
-      case 'closed':
-        return <CheckCircle2 className="size-4 text-slate-400" />;
-      default:
-        return <Clock className="size-4 text-slate-400" />;
+      case 'open': return <Clock className="size-4 text-amber-500" />;
+      case 'in_progress': return <AlertCircle className="size-4 text-blue-500" />;
+      case 'resolved': return <CheckCircle2 className="size-4 text-emerald-500" />;
+      case 'closed': return <CheckCircle2 className="size-4 text-slate-400" />;
+      default: return <Clock className="size-4 text-slate-400" />;
     }
   };
 
   const getPriorityColor = (priority: string) => {
     switch (priority) {
-      case 'high':
-        return 'bg-red-50 text-red-600 border-red-100';
-      case 'medium':
-        return 'bg-amber-50 text-amber-600 border-amber-100';
-      case 'low':
-        return 'bg-emerald-50 text-emerald-600 border-emerald-100';
-      default:
-        return 'bg-slate-50 text-slate-600 border-slate-100';
+      case 'high': return 'bg-red-50 text-red-600 border-red-100';
+      case 'medium': return 'bg-amber-50 text-amber-600 border-amber-100';
+      case 'low': return 'bg-emerald-50 text-emerald-600 border-emerald-100';
+      default: return 'bg-slate-50 text-slate-600 border-slate-100';
     }
   };
 
@@ -187,7 +193,7 @@ export function Support() {
 
       <main className="flex-1 lg:ml-72 min-h-screen pb-20 w-full transition-all duration-300">
         <Header title={t.supportCenter} onMenuClick={() => setIsSidebarOpen(true)}>
-          <button
+          <button 
             onClick={() => setIsModalOpen(true)}
             className="flex items-center gap-2 bg-emerald-500 text-white px-4 py-2.5 rounded-2xl font-bold text-xs uppercase tracking-widest shadow-lg shadow-emerald-200 hover:bg-emerald-600 transition-all active:scale-95"
           >
@@ -203,6 +209,7 @@ export function Support() {
             </div>
           )}
 
+          {/* AI Banner */}
           <section className="mb-10">
             <div className="bg-slate-900 rounded-[2.5rem] p-8 lg:p-12 text-white relative overflow-hidden shadow-2xl">
               <div className="relative z-10 grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">
@@ -214,14 +221,14 @@ export function Support() {
                     <span className="text-xs font-black uppercase tracking-[0.3em] text-emerald-400">Emerald AI Intelligence</span>
                   </div>
                   <h2 className="text-3xl lg:text-4xl font-black tracking-tight leading-tight">
-                    {t.talkToAiFirst.split('.')[0]}? <br />
+                    {t.talkToAiFirst.split('.')[0]}? <br/>
                     <span className="text-emerald-400">{t.talkToAiFirst.split('.')[1] || ''}</span>
                   </h2>
                   <p className="text-slate-400 font-medium text-lg leading-relaxed max-w-lg">
                     {t.aiSupportInstruction}
                   </p>
                   <div className="flex items-center gap-4 pt-4">
-                    <button
+                    <button 
                       onClick={() => {
                         const assistantBtn = document.querySelector('[data-assistant-trigger]');
                         if (assistantBtn instanceof HTMLElement) assistantBtn.click();
@@ -233,25 +240,24 @@ export function Support() {
                     </button>
                   </div>
                 </div>
-
                 <div className="hidden lg:flex justify-end">
-                  <div className="relative group">
-                    <div className="absolute inset-0 bg-emerald-500/10 blur-[100px] rounded-full group-hover:bg-emerald-500/20 transition-all duration-1000" />
-                    <div className="relative size-64 bg-slate-800 rounded-[3rem] border border-slate-700 p-8 flex flex-col justify-center gap-4">
-                      <div className="size-12 bg-emerald-500 rounded-2xl flex items-center justify-center shadow-lg shadow-emerald-500/20">
-                        <Bot className="size-6 text-white" />
+                   <div className="relative group">
+                      <div className="absolute inset-0 bg-emerald-500/10 blur-[100px] rounded-full group-hover:bg-emerald-500/20 transition-all duration-1000" />
+                      <div className="relative size-64 bg-slate-800 rounded-[3rem] border border-slate-700 p-8 flex flex-col justify-center gap-4">
+                         <div className="size-12 bg-emerald-500 rounded-2xl flex items-center justify-center shadow-lg shadow-emerald-500/20">
+                            <Bot className="size-6 text-white" />
+                         </div>
+                         <div className="space-y-2">
+                            <div className="h-2 w-32 bg-slate-700 rounded-full" />
+                            <div className="h-2 w-24 bg-slate-700/50 rounded-full" />
+                         </div>
+                         <div className="pt-4 flex gap-2">
+                            <div className="size-8 rounded-full bg-emerald-500/10 border border-emerald-500/20" />
+                            <div className="size-8 rounded-full bg-emerald-500/10 border border-emerald-500/20" />
+                            <div className="size-8 rounded-full bg-emerald-500/10 border border-emerald-500/20" />
+                         </div>
                       </div>
-                      <div className="space-y-2">
-                        <div className="h-2 w-32 bg-slate-700 rounded-full" />
-                        <div className="h-2 w-24 bg-slate-700/50 rounded-full" />
-                      </div>
-                      <div className="pt-4 flex gap-2">
-                        <div className="size-8 rounded-full bg-emerald-500/10 border border-emerald-500/20" />
-                        <div className="size-8 rounded-full bg-emerald-500/10 border border-emerald-500/20" />
-                        <div className="size-8 rounded-full bg-emerald-500/10 border border-emerald-500/20" />
-                      </div>
-                    </div>
-                  </div>
+                   </div>
                 </div>
               </div>
               <div className="absolute top-0 right-0 w-1/2 h-full bg-gradient-to-l from-emerald-500/5 to-transparent pointer-events-none" />
@@ -262,38 +268,40 @@ export function Support() {
             <AIAssistantDashboard />
           </section>
 
+          {/* Search and Filters */}
           <div className="flex flex-col sm:flex-row gap-4 mb-8">
             <div className="flex-1 relative">
               <Search className="absolute left-4 top-1/2 -translate-y-1/2 size-5 text-slate-300" />
-              <input
-                type="text"
-                placeholder={t.searchTickets}
+              <input 
+                type="text" 
+                placeholder={t.searchTickets} 
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 className="w-full pl-12 pr-4 py-4 bg-white border border-slate-100 rounded-[1.5rem] shadow-sm focus:ring-2 focus:ring-emerald-100 outline-none transition-all text-sm font-medium text-slate-600"
               />
             </div>
             <div className="flex items-center gap-2 bg-white px-4 py-2 border border-slate-100 rounded-[1.5rem] shadow-sm">
-              <Filter className="size-4 text-slate-400" />
-              <select
-                value={filterStatus}
-                onChange={(e) => setFilterStatus(e.target.value)}
-                className="bg-transparent border-none outline-none text-xs font-bold text-slate-500 uppercase tracking-widest cursor-pointer focus:ring-0"
-              >
-                <option value="all">{t.allStatus}</option>
-                <option value="open">{t.open}</option>
-                <option value="in_progress">{t.inProgress}</option>
-                <option value="resolved">{t.resolved}</option>
-                <option value="closed">{t.closed}</option>
-              </select>
+                <Filter className="size-4 text-slate-400" />
+                <select 
+                    value={filterStatus}
+                    onChange={(e) => setFilterStatus(e.target.value)}
+                    className="bg-transparent border-none outline-none text-xs font-bold text-slate-500 uppercase tracking-widest cursor-pointer focus:ring-0"
+                >
+                    <option value="all">{t.allStatus}</option>
+                    <option value="open">{t.open}</option>
+                    <option value="in_progress">{t.inProgress}</option>
+                    <option value="resolved">{t.resolved}</option>
+                    <option value="closed">{t.closed}</option>
+                </select>
             </div>
           </div>
 
+          {/* Tickets List */}
           {loading ? (
-            <div className="flex flex-col items-center justify-center py-20 gap-4">
-              <div className="w-12 h-12 border-4 border-emerald-100 border-t-emerald-500 rounded-full animate-spin" />
-              <p className="text-sm font-bold text-slate-400 uppercase tracking-widest">{t.loadingTickets}</p>
-            </div>
+             <div className="flex flex-col items-center justify-center py-20 gap-4">
+                <div className="w-12 h-12 border-4 border-emerald-100 border-t-emerald-500 rounded-full animate-spin" />
+                <p className="text-sm font-bold text-slate-400 uppercase tracking-widest">{t.loadingTickets}</p>
+             </div>
           ) : filteredTickets.length === 0 ? (
             <div className="bg-white rounded-[2.5rem] p-12 text-center border border-slate-50 shadow-sm col-span-full">
               <div className="w-16 h-16 bg-slate-50 rounded-2xl flex items-center justify-center mx-auto mb-4 text-slate-300">
@@ -301,7 +309,7 @@ export function Support() {
               </div>
               <h3 className="text-lg font-bold text-slate-900 mb-2">{t.noTickets}</h3>
               <p className="text-sm text-slate-400 max-w-xs mx-auto mb-6">{t.noTicketsDescription}</p>
-              <button
+              <button 
                 onClick={() => setIsModalOpen(true)}
                 className="bg-emerald-50 text-emerald-600 px-6 py-3 rounded-xl font-black text-xs uppercase tracking-widest hover:bg-emerald-100 transition-all active:scale-95"
               >
@@ -311,17 +319,25 @@ export function Support() {
           ) : (
             <div className="grid grid-cols-1 gap-4">
               {filteredTickets.map((ticket) => (
-                <motion.div
+                <motion.div 
                   layout
                   initial={{ opacity: 0, scale: 0.98 }}
                   animate={{ opacity: 1, scale: 1 }}
                   key={ticket.id}
-                  className="bg-white p-6 rounded-[2rem] border border-slate-50 shadow-sm hover:shadow-md transition-all group"
+                  className={cn(
+                    "p-6 rounded-[2rem] border shadow-sm transition-all group",
+                    ticket.id === highlightedTicketId
+                      ? "bg-emerald-50/60 border-emerald-200 shadow-md shadow-emerald-100/60"
+                      : "bg-white border-slate-50 hover:shadow-md"
+                  )}
                 >
                   <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
                     <div className="flex-1 space-y-3">
                       <div className="flex flex-wrap items-center gap-3">
-                        <div className={cn('px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest border', getPriorityColor(ticket.priority))}>
+                        <div className={cn(
+                          "px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest border",
+                          getPriorityColor(ticket.priority)
+                        )}>
                           {ticket.priority}
                         </div>
                         <div className="flex items-center gap-1.5 px-3 py-1 bg-slate-50 text-slate-500 rounded-full text-[10px] font-black uppercase tracking-widest border border-slate-100">
@@ -330,23 +346,23 @@ export function Support() {
                         </div>
                         <span className="text-[11px] font-bold text-slate-400">#{ticket.id.split('-')[0]}</span>
                       </div>
-
+                      
                       <div>
                         <h4 className="text-lg font-black text-slate-900 group-hover:text-emerald-600 transition-colors">{ticket.subject}</h4>
                         <p className="text-sm text-slate-500 font-medium line-clamp-2 mt-1">{ticket.description}</p>
                       </div>
 
                       <div className="flex items-center gap-4 text-[11px] font-bold text-slate-400">
-                        <div className="flex items-center gap-1.5">
-                          <Clock className="size-3.5" />
-                          {formatDate(ticket.created_at)}
-                        </div>
-                        {ticket.profiles && (
-                          <div className="flex items-center gap-1.5">
-                            <User className="size-3.5" />
-                            {ticket.profiles.full_name} ({ticket.profiles.email})
-                          </div>
-                        )}
+                         <div className="flex items-center gap-1.5">
+                            <Clock className="size-3.5" />
+                            {formatDate(ticket.created_at)}
+                         </div>
+                         {ticket.profiles && (
+                           <div className="flex items-center gap-1.5">
+                              <User className="size-3.5" />
+                              {ticket.profiles.full_name} ({ticket.profiles.email})
+                           </div>
+                         )}
                       </div>
                     </div>
 
@@ -357,27 +373,28 @@ export function Support() {
                           {t[ticket.status as keyof typeof t] || ticket.status.replace('_', ' ')}
                         </span>
                       </div>
-
+                      
+                      {/* Admin Controls */}
                       {(profile?.is_admin || ((user as any)?.role === 'admin') || user?.user_metadata?.role === 'admin') && (
                         <div className="flex gap-2">
-                          {ticket.status === 'open' && (
-                            <button
-                              onClick={() => handleUpdateStatus(ticket.id, 'in_progress')}
-                              className="p-2.5 bg-blue-50 text-blue-600 rounded-xl hover:bg-blue-100 transition-all active:scale-90"
-                              title={t.markInProgress}
-                            >
-                              <ArrowRight className="size-4" />
-                            </button>
-                          )}
-                          {(ticket.status === 'open' || ticket.status === 'in_progress') && (
-                            <button
-                              onClick={() => handleUpdateStatus(ticket.id, 'resolved')}
-                              className="p-2.5 bg-emerald-50 text-emerald-600 rounded-xl hover:bg-emerald-100 transition-all active:scale-90"
-                              title={t.resolveTicket}
-                            >
-                              <CheckCircle2 className="size-4" />
-                            </button>
-                          )}
+                           {ticket.status === 'open' && (
+                             <button 
+                               onClick={() => handleUpdateStatus(ticket.id, 'in_progress')}
+                               className="p-2.5 bg-blue-50 text-blue-600 rounded-xl hover:bg-blue-100 transition-all active:scale-90"
+                               title={t.markInProgress}
+                             >
+                               <ArrowRight className="size-4" />
+                             </button>
+                           )}
+                           {(ticket.status === 'open' || ticket.status === 'in_progress') && (
+                             <button 
+                               onClick={() => handleUpdateStatus(ticket.id, 'resolved')}
+                               className="p-2.5 bg-emerald-50 text-emerald-600 rounded-xl hover:bg-emerald-100 transition-all active:scale-90"
+                               title={t.resolveTicket}
+                             >
+                               <CheckCircle2 className="size-4" />
+                             </button>
+                           )}
                         </div>
                       )}
                     </div>
@@ -388,17 +405,18 @@ export function Support() {
           )}
         </div>
 
+        {/* Create Ticket Modal */}
         <AnimatePresence>
           {isModalOpen && (
             <div className="fixed inset-0 z-[110] flex items-center justify-center p-4">
-              <motion.div
+              <motion.div 
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
                 onClick={() => setIsModalOpen(false)}
                 className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm"
               />
-              <motion.div
+              <motion.div 
                 initial={{ opacity: 0, scale: 0.95, y: 20 }}
                 animate={{ opacity: 1, scale: 1, y: 0 }}
                 exit={{ opacity: 0, scale: 0.95, y: 20 }}
@@ -424,12 +442,12 @@ export function Support() {
 
                   <div className="space-y-2">
                     <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400 ml-1">{t.ticketSubject}</label>
-                    <input
+                    <input 
                       type="text"
                       required
                       placeholder={t.subjectPlaceholder}
                       value={formData.subject}
-                      onChange={(e) => setFormData({ ...formData, subject: e.target.value })}
+                      onChange={e => setFormData({...formData, subject: e.target.value})}
                       className="w-full px-4 py-4 bg-slate-50 border-none rounded-2xl focus:ring-2 focus:ring-emerald-500 outline-none text-sm font-bold text-slate-900 transition-all"
                     />
                   </div>
@@ -437,9 +455,9 @@ export function Support() {
                   <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-2">
                       <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400 ml-1">{t.ticketPriority}</label>
-                      <select
+                      <select 
                         value={formData.priority}
-                        onChange={(e) => setFormData({ ...formData, priority: e.target.value as any })}
+                        onChange={e => setFormData({...formData, priority: e.target.value as any})}
                         className="w-full px-4 py-4 bg-slate-50 border-none rounded-2xl focus:ring-2 focus:ring-emerald-500 outline-none text-sm font-bold text-slate-900 transition-all cursor-pointer"
                       >
                         <option value="low">{t.low}</option>
@@ -449,9 +467,9 @@ export function Support() {
                     </div>
                     <div className="space-y-2">
                       <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400 ml-1">{t.category}</label>
-                      <select
+                      <select 
                         value={formData.category}
-                        onChange={(e) => setFormData({ ...formData, category: e.target.value as any })}
+                        onChange={e => setFormData({...formData, category: e.target.value as any})}
                         className="w-full px-4 py-4 bg-slate-50 border-none rounded-2xl focus:ring-2 focus:ring-emerald-500 outline-none text-sm font-bold text-slate-900 transition-all cursor-pointer"
                       >
                         <option value="technical">{t.technical}</option>
@@ -464,25 +482,25 @@ export function Support() {
 
                   <div className="space-y-2">
                     <label className="text-[10px] font-bold uppercase tracking-widest text-slate-400 ml-1">{t.ticketDescription}</label>
-                    <textarea
+                    <textarea 
                       required
                       rows={4}
                       placeholder={t.descriptionPlaceholder}
                       value={formData.description}
-                      onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                      onChange={e => setFormData({...formData, description: e.target.value})}
                       className="w-full px-4 py-4 bg-slate-50 border-none rounded-2xl focus:ring-2 focus:ring-emerald-500 outline-none text-sm font-bold text-slate-900 transition-all resize-none"
                     />
                   </div>
 
                   <div className="flex gap-4 pt-4">
-                    <button
+                    <button 
                       type="button"
                       onClick={() => setIsModalOpen(false)}
                       className="flex-1 px-6 py-4 bg-slate-50 text-slate-500 font-bold rounded-2xl hover:bg-slate-100 transition-all uppercase tracking-widest text-xs"
                     >
                       {t.cancel}
                     </button>
-                    <button
+                    <button 
                       type="submit"
                       disabled={formLoading}
                       className="flex-3 px-10 py-4 bg-emerald-500 text-white font-black rounded-2xl hover:bg-emerald-600 shadow-lg shadow-emerald-200 transition-all active:scale-[0.98] disabled:opacity-50 uppercase tracking-[0.15em] text-xs"

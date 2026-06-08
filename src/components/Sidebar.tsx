@@ -19,7 +19,7 @@ import {
 import {cn} from '@/src/lib/utils';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useAuth } from '../contexts/AuthContext';
-import { useNavigate, useLocation } from 'react-router-dom';
+import { NavLink, useLocation } from 'react-router-dom';
 
 const UserProfileModal = lazy(() =>
   import('./UserProfileModal').then((module) => ({ default: module.UserProfileModal }))
@@ -34,7 +34,6 @@ interface SidebarProps {
 export function Sidebar({className, isOpen, onClose}: SidebarProps) {
   const { language, setLanguage, t } = useLanguage();
   const { user, profile, signOut } = useAuth();
-  const navigate = useNavigate();
   const location = useLocation();
   const [isProfileOpen, setIsProfileOpen] = useState(false);
 
@@ -90,16 +89,11 @@ export function Sidebar({className, isOpen, onClose}: SidebarProps) {
         {/* Adicionamos margem inferior (mb-6) para dar um respiro antes do rodapé */}
         <nav className="flex-1 flex flex-col gap-2 mb-6">
           {navItems.map((item) => (
-            <button
+            <NavLink
               key={item.name}
+              to={item.path}
               onClick={() => {
                 if (item.path !== '#') {
-                  // Determine active tab for settings
-                  const state = item.path === '/settings' 
-                    ? { activeTab: item.name === 'Planos & Assinatura' ? 'billing' : 'profile' }
-                    : undefined;
-                    
-                  navigate(item.path, { state });
                   onClose();
                 }
               }}
@@ -112,7 +106,7 @@ export function Sidebar({className, isOpen, onClose}: SidebarProps) {
             >
               <item.icon className={cn("size-5", location.pathname === item.path ? "text-primary-600" : "text-slate-400 group-hover:text-primary-500")} />
               {item.name}
-            </button>
+            </NavLink>
           ))}
         </nav>
 

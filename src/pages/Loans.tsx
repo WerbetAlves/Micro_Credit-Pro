@@ -9,6 +9,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../lib/utils';
 import Markdown from 'react-markdown';
 import { appendLoanWriteOffMeta, extractLoanWriteOffMeta, isLoanWrittenOff, type LoanWriteOffMeta } from '../lib/loanWriteOff';
+import { useSearchParams } from 'react-router-dom';
 
 interface Loan {
   id: string;
@@ -47,6 +48,7 @@ interface Client {
 export function Loans() {
   const { t, formatCurrency, formatDate } = useLanguage();
   const { user } = useAuth();
+  const [searchParams] = useSearchParams();
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [loans, setLoans] = useState<Loan[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
@@ -69,6 +71,7 @@ export function Loans() {
   const [writeOffLoading, setWriteOffLoading] = useState(false);
   const [writeOffError, setWriteOffError] = useState<string | null>(null);
   const [writeOffSummary, setWriteOffSummary] = useState<{ amount: number; installments: number }>({ amount: 0, installments: 0 });
+  const highlightedLoanId = searchParams.get('loan') || '';
 
   // Form states
   const [formData, setFormData] = useState<{
@@ -103,6 +106,10 @@ export function Loans() {
     fetchLoans();
     fetchClients();
   }, [user]);
+
+  useEffect(() => {
+    setSearch(searchParams.get('search') || '');
+  }, [searchParams]);
 
   const weekdayNames = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'] as const;
 
@@ -476,7 +483,7 @@ export function Loans() {
 
   const filteredLoans = loans.filter(l => {
     const clientName = l.clients?.full_name?.toLowerCase() || '';
-    const matchesSearch = clientName.includes(search.toLowerCase());
+    const matchesSearch = l.id === highlightedLoanId || clientName.includes(search.toLowerCase());
     const matchesFilter = filterStatus === 'all' || getLoanDisplayStatus(l) === filterStatus;
     return matchesSearch && matchesFilter;
   });

@@ -8,6 +8,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { cn } from '../lib/utils';
 import { parseAppDate } from '../lib/date';
 import { getInstallmentDisplayStatus, getTodayLocal } from '../lib/installments';
+import { useSearchParams } from 'react-router-dom';
 
 interface Installment {
   id: string;
@@ -31,6 +32,7 @@ type InstallmentStatus = 'upcoming' | 'paid' | 'late' | 'missed';
 export function Payments() {
   const { t, formatCurrency, formatDate } = useLanguage();
   const { user } = useAuth();
+  const [searchParams] = useSearchParams();
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [installments, setInstallments] = useState<Installment[]>([]);
   const [loans, setLoans] = useState<{ id: string; client_id: string; clients?: { full_name: string } }[]>([]);
@@ -48,6 +50,7 @@ export function Payments() {
   const [paidAmount, setPaidAmount] = useState<number>(0);
   const [formLoading, setFormLoading] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+  const highlightedInstallmentId = searchParams.get('installment') || '';
 
   const [formData, setFormData] = useState<{
     loan_id: string;
@@ -66,6 +69,10 @@ export function Payments() {
     fetchLoans();
     fetchWallets();
   }, [user]);
+
+  useEffect(() => {
+    setSearch(searchParams.get('search') || '');
+  }, [searchParams]);
 
   async function fetchWallets() {
     if (!user) return;
@@ -306,7 +313,7 @@ export function Payments() {
   const filteredInstallments = installments.filter((inst) => {
     const clientName = inst.loans?.clients?.full_name || '';
     const displayStatus = getInstallmentDisplayStatus(inst);
-    const matchesSearch = clientName.toLowerCase().includes(search.toLowerCase());
+    const matchesSearch = inst.id === highlightedInstallmentId || clientName.toLowerCase().includes(search.toLowerCase());
     const matchesFilter = filterStatus === 'all' || displayStatus === filterStatus;
     return matchesSearch && matchesFilter;
   });
@@ -416,7 +423,12 @@ export function Payments() {
                     layout
                     initial={{ opacity: 0, y: 20 }}
                     animate={{ opacity: 1, y: 0 }}
-                    className="bg-white rounded-[2rem] p-6 shadow-sm border border-slate-50 hover:shadow-xl hover:shadow-slate-100/50 transition-all group"
+                    className={cn(
+                      "rounded-[2rem] p-6 shadow-sm border transition-all group",
+                      inst.id === highlightedInstallmentId
+                        ? "bg-emerald-50/60 border-emerald-200 shadow-lg shadow-emerald-100/70"
+                        : "bg-white border-slate-50 hover:shadow-xl hover:shadow-slate-100/50"
+                    )}
                   >
                     <div className="flex items-start justify-between mb-6">
                       <div className="flex items-center gap-4">

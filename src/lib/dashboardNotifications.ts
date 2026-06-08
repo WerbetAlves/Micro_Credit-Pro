@@ -1,4 +1,5 @@
 import { parseAppDate } from './date';
+import { getInstallmentDisplayStatus } from './installments';
 
 export type DashboardNotification = {
   id: string;
@@ -80,8 +81,9 @@ export const buildDashboardNotifications = ({
     const clientName = installment.loans?.clients?.full_name || 'Cliente';
     const diffInDays = getDiffInDays(installment.due_date);
     const amount = Number(installment.amount || 0).toFixed(2);
+    const displayStatus = getInstallmentDisplayStatus(installment);
 
-    if (installment.status === 'late' || installment.status === 'missed') {
+    if (displayStatus === 'late' || displayStatus === 'missed') {
       notifications.push({
         id: `installment-${installment.id}-late`,
         type: 'alert',
@@ -94,7 +96,7 @@ export const buildDashboardNotifications = ({
       return;
     }
 
-    if (installment.status === 'upcoming' && diffInDays >= 0 && diffInDays <= 3) {
+    if (displayStatus === 'upcoming' && diffInDays >= 0 && diffInDays <= 3) {
       notifications.push({
         id: `installment-${installment.id}-upcoming`,
         type: 'payment',

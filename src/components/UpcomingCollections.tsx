@@ -5,6 +5,7 @@ import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import { useRealtimeRefresh } from '../lib/useRealtimeRefresh';
+import { getInstallmentDisplayStatus } from '../lib/installments';
 
 interface CollectionItem {
   id: string;
@@ -12,6 +13,7 @@ interface CollectionItem {
   date: string;
   amount: number;
   phone: string;
+  status: 'upcoming' | 'paid' | 'late' | 'missed';
 }
 
 export function UpcomingCollections() {
@@ -45,6 +47,7 @@ export function UpcomingCollections() {
           id,
           due_date,
           amount,
+          status,
           loans!inner (
             user_id,
             clients (
@@ -54,9 +57,8 @@ export function UpcomingCollections() {
           )
         `)
         .eq('loans.user_id', user.id)
-        .eq('status', 'upcoming')
         .order('due_date', { ascending: true })
-        .limit(5);
+        .limit(20);
 
       if (error) throw error;
 
@@ -66,7 +68,10 @@ export function UpcomingCollections() {
         date: item.due_date,
         amount: Number(item.amount || 0),
         phone: item.loans?.clients?.phone || '',
-      }));
+        status: getInstallmentDisplayStatus(item),
+      }))
+      .filter((item: CollectionItem) => item.status === 'upcoming')
+      .slice(0, 5);
 
       setCollections(formatted);
     } catch (err: any) {
