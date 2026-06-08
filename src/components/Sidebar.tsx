@@ -36,6 +36,11 @@ export function Sidebar({className, isOpen, onClose}: SidebarProps) {
   const { user, profile, signOut } = useAuth();
   const location = useLocation();
   const [isProfileOpen, setIsProfileOpen] = useState(false);
+  const isAdminUser = Boolean(
+    profile?.is_admin ||
+    (user as any)?.role === 'admin' ||
+    user?.user_metadata?.role === 'admin'
+  );
 
   const navItems = React.useMemo(() => {
     const items = [
@@ -50,12 +55,12 @@ export function Sidebar({className, isOpen, onClose}: SidebarProps) {
       {name: t.settings, icon: Settings, path: '/settings'},
     ];
 
-    if (profile?.is_admin) {
+    if (isAdminUser) {
       items.splice(1, 0, { name: t.adminPanel, icon: Shield, path: '/admin' });
     }
 
     return items;
-  }, [t, profile]);
+  }, [t, isAdminUser]);
 
   return (
     <>
