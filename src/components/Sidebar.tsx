@@ -41,6 +41,7 @@ export function Sidebar({className, isOpen, onClose}: SidebarProps) {
     (user as any)?.role === 'admin' ||
     user?.user_metadata?.role === 'admin'
   );
+  const shouldShowAdminItem = isAdminUser || location.pathname.startsWith('/admin');
 
   const navItems = React.useMemo(() => {
     const items = [
@@ -55,12 +56,12 @@ export function Sidebar({className, isOpen, onClose}: SidebarProps) {
       {name: t.settings, icon: Settings, path: '/settings'},
     ];
 
-    if (isAdminUser) {
+    if (shouldShowAdminItem) {
       items.splice(1, 0, { name: t.adminPanel, icon: Shield, path: '/admin' });
     }
 
     return items;
-  }, [t, isAdminUser]);
+  }, [t, shouldShowAdminItem]);
 
   return (
     <>

@@ -178,13 +178,13 @@ export function Admin() {
   }
 
   return (
-    <div className="min-h-screen bg-[#F8FAFC]">
+    <div className="min-h-screen bg-[#F8FAFC] overflow-x-hidden">
       <Sidebar isOpen={isSidebarOpen} onClose={() => setIsSidebarOpen(false)} />
       
-      <main className="flex-1 lg:ml-72 min-h-screen pb-20 w-full transition-all duration-300">
+      <main className="flex-1 lg:ml-72 min-h-screen pb-20 w-full max-w-full overflow-x-hidden transition-all duration-300">
         <Header title={t.adminPanel} onMenuClick={() => setIsSidebarOpen(true)} />
 
-        <div className="px-4 md:px-6 lg:px-8 py-6 lg:py-10 w-full max-w-[1600px] mx-auto space-y-8 lg:space-y-12 transition-all">
+        <div className="px-4 md:px-6 lg:px-8 py-6 lg:py-10 w-full max-w-[1600px] mx-auto space-y-8 lg:space-y-12 transition-all overflow-x-hidden">
           {adminError && (
             <div className="rounded-2xl border border-amber-100 bg-amber-50 px-4 py-3 text-sm font-bold text-amber-700">
               {adminError}
@@ -192,7 +192,7 @@ export function Admin() {
           )}
           
           {/* Admin KPI Grid */}
-          <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 lg:gap-6">
+          <section className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 lg:gap-6">
             <AdminKPICard 
               label={t.totalUsers} 
               value={stats.totalUsers.toString()} 
@@ -220,7 +220,7 @@ export function Admin() {
           </section>
 
           {/* Tabs */}
-          <div className="flex items-center gap-4 border-b border-slate-200">
+          <div className="flex flex-wrap items-center gap-4 border-b border-slate-200 overflow-x-auto">
             <button 
               onClick={() => setActiveTab('users')}
               className={cn(
@@ -250,12 +250,12 @@ export function Admin() {
                 exit={{ opacity: 0, y: -10 }}
                 className="space-y-6"
               >
-                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 px-2">
+                <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 px-2">
                   <h3 className="text-xl lg:text-2xl font-black tracking-tight text-slate-900">
                     {t.platformManagement}
                   </h3>
                   
-                  <div className="relative w-full md:w-80 group">
+                  <div className="relative w-full lg:w-80 group">
                     <Search className="absolute left-4 top-1/2 -translate-y-1/2 size-4 text-slate-400 group-focus-within:text-emerald-500 transition-colors" />
                     <input 
                       type="text"
@@ -267,22 +267,22 @@ export function Admin() {
                   </div>
                 </div>
 
-                <div className="bg-white rounded-[2.5rem] shadow-xl shadow-slate-200/50 border border-slate-100 overflow-hidden">
+                <div className="bg-white rounded-[2rem] lg:rounded-[2.5rem] shadow-xl shadow-slate-200/50 border border-slate-100 overflow-hidden">
                   <div className="overflow-x-auto">
                     <table className="w-full text-left border-collapse">
                       <thead>
                         <tr className="bg-slate-50/50 border-b border-slate-100">
-                          <th className="px-8 py-5 text-[10px] font-black uppercase tracking-widest text-slate-400">{t.clientName}</th>
-                          <th className="px-8 py-5 text-[10px] font-black uppercase tracking-widest text-slate-400">Email</th>
-                          <th className="px-8 py-5 text-[10px] font-black uppercase tracking-widest text-slate-400">{t.planLabel}</th>
-                          <th className="px-8 py-5 text-[10px] font-black uppercase tracking-widest text-slate-400">{t.status}</th>
-                          <th className="px-8 py-5 text-[10px] font-black uppercase tracking-widest text-slate-400 text-right">{t.actions}</th>
+                          <th className="px-4 lg:px-8 py-5 text-[10px] font-black uppercase tracking-widest text-slate-400">{t.clientName}</th>
+                          <th className="px-4 lg:px-8 py-5 text-[10px] font-black uppercase tracking-widest text-slate-400">Email</th>
+                          <th className="px-4 lg:px-8 py-5 text-[10px] font-black uppercase tracking-widest text-slate-400">{t.planLabel}</th>
+                          <th className="px-4 lg:px-8 py-5 text-[10px] font-black uppercase tracking-widest text-slate-400">{t.status}</th>
+                          <th className="px-4 lg:px-8 py-5 text-[10px] font-black uppercase tracking-widest text-slate-400 text-right">{t.actions}</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-50">
                         {filteredUsers.map((u) => (
                           <tr key={u.id} className="hover:bg-slate-50/30 transition-colors">
-                            <td className="px-8 py-5">
+                            <td className="px-4 lg:px-8 py-5">
                               <div className="flex items-center gap-3">
                                 <div className="size-10 rounded-full bg-slate-100 flex items-center justify-center font-bold text-slate-500">
                                   {u.avatar_url ? (
@@ -299,8 +299,8 @@ export function Admin() {
                                 </div>
                               </div>
                             </td>
-                            <td className="px-8 py-5 font-mono text-xs text-slate-500">{u.email}</td>
-                            <td className="px-8 py-5">
+                            <td className="px-4 lg:px-8 py-5 font-mono text-xs text-slate-500">{u.email}</td>
+                            <td className="px-4 lg:px-8 py-5">
                               <div className={cn(
                                 "inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest",
                                 (u.plan_type === 'business' || u.plan_type === 'enterprise') ? "bg-violet-100 text-violet-700" :
@@ -313,13 +313,13 @@ export function Admin() {
                                 {u.plan_type}
                               </div>
                             </td>
-                            <td className="px-8 py-5">
+                            <td className="px-4 lg:px-8 py-5">
                               <div className="flex items-center gap-2">
                                 <div className="size-1.5 rounded-full bg-emerald-500 animate-pulse" />
                                 <span className="text-xs font-bold text-slate-600 uppercase tracking-widest">{t.active}</span>
                               </div>
                             </td>
-                            <td className="px-8 py-5 text-right">
+                            <td className="px-4 lg:px-8 py-5 text-right">
                               <button 
                                 onClick={() => toggleUserPlan(u.id, u.plan_type)}
                                 className="p-2 hover:bg-white rounded-xl transition-all hover:shadow-md text-slate-400 hover:text-emerald-500"
@@ -343,10 +343,10 @@ export function Admin() {
                 exit={{ opacity: 0, y: -10 }}
                 className="space-y-6"
               >
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <div className="grid grid-cols-1 2xl:grid-cols-2 gap-6">
                   {/* Gateways de Pagamento */}
-                  <div className="bg-white rounded-[2.5rem] p-8 shadow-xl shadow-slate-200/50 border border-slate-100">
-                    <div className="flex items-center gap-4 mb-8">
+                  <div className="bg-white rounded-[2rem] lg:rounded-[2.5rem] p-5 md:p-6 xl:p-8 shadow-xl shadow-slate-200/50 border border-slate-100 min-w-0">
+                    <div className="flex items-start gap-4 mb-8">
                       <div className="size-12 rounded-2xl bg-emerald-100 text-emerald-600 flex items-center justify-center shrink-0">
                         <CreditCard className="size-6" />
                       </div>
@@ -357,13 +357,13 @@ export function Admin() {
                     </div>
 
                     <div className="space-y-6">
-                      <div className="p-5 rounded-2xl border border-slate-100 bg-slate-50/50">
+                      <div className="p-4 md:p-5 rounded-2xl border border-slate-100 bg-slate-50/50 min-w-0">
                         <div className="flex items-center justify-between mb-4">
-                          <div className="flex items-center gap-3">
+                          <div className="flex items-center gap-3 min-w-0">
                             <div className="size-8 rounded-full bg-[#001E60] flex items-center justify-center">
                               <span className="text-white font-black text-xs">Asaas</span>
                             </div>
-                            <span className="font-bold text-slate-900">Asaas Gateway</span>
+                            <span className="font-bold text-slate-900 truncate">Asaas Gateway</span>
                           </div>
                           <div className="relative inline-flex h-6 w-11 items-center rounded-full bg-emerald-500">
                             <span className="inline-block h-4 w-4 translate-x-6 rounded-full bg-white transition" />
@@ -378,9 +378,9 @@ export function Admin() {
                         />
                       </div>
 
-                      <div className="p-5 rounded-2xl border border-slate-100 bg-slate-50/50">
+                      <div className="p-4 md:p-5 rounded-2xl border border-slate-100 bg-slate-50/50 min-w-0">
                         <div className="flex items-center justify-between mb-4">
-                          <div className="flex items-center gap-3">
+                          <div className="flex items-center gap-3 min-w-0">
                             <div className="size-8 rounded-full bg-[#635BFF] flex items-center justify-center">
                               <span className="text-white font-black text-xs">S</span>
                             </div>
@@ -399,9 +399,9 @@ export function Admin() {
                         />
                       </div>
                       
-                      <div className="p-5 rounded-2xl border border-slate-100 bg-slate-50/50">
+                      <div className="p-4 md:p-5 rounded-2xl border border-slate-100 bg-slate-50/50 min-w-0">
                         <div className="flex items-center justify-between mb-4">
-                          <div className="flex items-center gap-3">
+                          <div className="flex items-center gap-3 min-w-0">
                             <div className="size-8 rounded-full bg-teal-500 flex items-center justify-center">
                               <span className="text-white font-black text-xs">PIX</span>
                             </div>
@@ -423,8 +423,8 @@ export function Admin() {
                   </div>
 
                   {/* Planos e Configurações */}
-                  <div className="bg-white rounded-[2.5rem] p-8 shadow-xl shadow-slate-200/50 border border-slate-100">
-                    <div className="flex items-center gap-4 mb-8">
+                  <div className="bg-white rounded-[2rem] lg:rounded-[2.5rem] p-5 md:p-6 xl:p-8 shadow-xl shadow-slate-200/50 border border-slate-100 min-w-0">
+                    <div className="flex items-start gap-4 mb-8">
                       <div className="size-12 rounded-2xl bg-amber-100 text-amber-600 flex items-center justify-center shrink-0">
                         <Settings className="size-6" />
                       </div>
@@ -487,14 +487,14 @@ function AdminKPICard({ label, value, icon: Icon, color }: { label: string; valu
     <motion.div 
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
-      className="bg-white p-6 lg:p-8 rounded-[2rem] shadow-xl shadow-slate-200/40 border border-slate-100 flex items-center gap-6"
+      className="bg-white p-5 md:p-6 lg:p-8 rounded-[2rem] shadow-xl shadow-slate-200/40 border border-slate-100 flex items-center gap-4 md:gap-6 min-w-0"
     >
       <div className={cn("size-12 lg:size-14 rounded-2xl flex items-center justify-center shrink-0", color)}>
         <Icon className="size-6 lg:size-7" />
       </div>
-      <div>
+      <div className="min-w-0">
         <p className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-1">{label}</p>
-        <p className="text-2xl lg:text-3xl font-black text-slate-900 tracking-tighter">{value}</p>
+        <p className="text-2xl lg:text-3xl font-black text-slate-900 tracking-tighter break-words">{value}</p>
       </div>
     </motion.div>
   );
