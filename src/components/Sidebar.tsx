@@ -1,4 +1,4 @@
-import React, { lazy, Suspense, useState } from 'react';
+import React, { lazy, Suspense, useEffect, useState } from 'react';
 import { 
   LayoutDashboard, 
   Landmark, 
@@ -20,6 +20,7 @@ import {cn} from '@/src/lib/utils';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useAuth } from '../contexts/AuthContext';
 import { NavLink, useLocation } from 'react-router-dom';
+import { supabase } from '../lib/supabase';
 
 const UserProfileModal = lazy(() =>
   import('./UserProfileModal').then((module) => ({ default: module.UserProfileModal }))
@@ -36,12 +37,52 @@ export function Sidebar({className, isOpen, onClose}: SidebarProps) {
   const { user, profile, signOut } = useAuth();
   const location = useLocation();
   const [isProfileOpen, setIsProfileOpen] = useState(false);
-  const isAdminUser = Boolean(
+  const [hasAdminAccess, setHasAdminAccess] = useState(false);
+
+  const hasAdminSignal = Boolean(
     profile?.is_admin ||
     (user as any)?.role === 'admin' ||
     user?.user_metadata?.role === 'admin'
   );
-  const shouldShowAdminItem = isAdminUser || location.pathname.startsWith('/admin');
+
+  useEffect(() => {
+    let isMounted = true;
+
+    async function resolveAdminAccess() {
+      if (!user) {
+        if (isMounted) setHasAdminAccess(false);
+        return;
+      }
+
+      if (hasAdminSignal) {
+        if (isMounted) setHasAdminAccess(true);
+        return;
+      }
+
+      try {
+        const { data, error } = await supabase
+          .from('profiles')
+          .select('is_admin')
+          .eq('id', user.id)
+          .single();
+
+        if (!error && isMounted) {
+          setHasAdminAccess(Boolean(data?.is_admin));
+        }
+      } catch (error) {
+        console.error('Error resolving admin access for sidebar:', error);
+        if (isMounted) setHasAdminAccess(false);
+      }
+    }
+
+    resolveAdminAccess();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [user, hasAdminSignal]);
+
+  const shouldShowAdminItem = hasAdminSignal || hasAdminAccess || location.pathname.startsWith('/admin');
 
   const navItems = React.useMemo(() => {
     const items = [
