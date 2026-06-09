@@ -1,4 +1,5 @@
 import { getSupabaseClients, requireAuthenticatedUser } from '../billing/_shared.js';
+import { hasAdminAccess } from './_shared.js';
 
 const ALLOWED_PLANS = ['free', 'start', 'pro', 'business'];
 
@@ -9,7 +10,17 @@ async function requireAdminProfile(adminClient, userId) {
     .eq('id', userId)
     .single();
 
-  if (error || !profile?.is_admin) {
+  if (error && error.code !== 'PGRST116') {
+    throw error;
+  }
+
+  return profile || null;
+}
+
+async function requireAdminAccess(adminClient, user) {
+  const profile = await requireAdminProfile(adminClient, user.id);
+
+  if (!hasAdminAccess(user, profile)) {
     throw new Error('Acesso administrativo negado.');
   }
 }
@@ -24,7 +35,7 @@ export default async function handler(req, res) {
     const user = await requireAuthenticatedUser(req);
     const { adminClient } = getSupabaseClients();
 
-    await requireAdminProfile(adminClient, user.id);
+    await requireAdminAccess(adminClient, user);
 
     const body = typeof req.body === 'string' ? JSON.parse(req.body || '{}') : req.body || {};
     const userId = String(body.userId || '').trim();

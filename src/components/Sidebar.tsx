@@ -34,7 +34,7 @@ interface SidebarProps {
 
 export function Sidebar({className, isOpen, onClose}: SidebarProps) {
   const { language, setLanguage, t } = useLanguage();
-  const { user, profile, signOut } = useAuth();
+  const { user, profile, session, signOut } = useAuth();
   const location = useLocation();
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [hasAdminAccess, setHasAdminAccess] = useState(false);
@@ -42,6 +42,7 @@ export function Sidebar({className, isOpen, onClose}: SidebarProps) {
   const hasAdminSignal = Boolean(
     profile?.is_admin ||
     (user as any)?.role === 'admin' ||
+    user?.app_metadata?.role === 'admin' ||
     user?.user_metadata?.role === 'admin'
   );
 
@@ -60,14 +61,21 @@ export function Sidebar({className, isOpen, onClose}: SidebarProps) {
       }
 
       try {
-        const { data, error } = await supabase
-          .from('profiles')
-          .select('is_admin')
-          .eq('id', user.id)
-          .single();
+        if (!session?.access_token) {
+          if (isMounted) setHasAdminAccess(false);
+          return;
+        }
 
-        if (!error && isMounted) {
-          setHasAdminAccess(Boolean(data?.is_admin));
+        const response = await fetch('/api/admin/access', {
+          headers: {
+            Authorization: `Bearer ${session.access_token}`,
+          },
+        });
+
+        const payload = await response.json().catch(() => ({}));
+
+        if (isMounted) {
+          setHasAdminAccess(Boolean(payload?.allowed));
         }
       } catch (error) {
         console.error('Error resolving admin access for sidebar:', error);
@@ -80,7 +88,7 @@ export function Sidebar({className, isOpen, onClose}: SidebarProps) {
     return () => {
       isMounted = false;
     };
-  }, [user, hasAdminSignal]);
+  }, [user, session, hasAdminSignal]);
 
   const shouldShowAdminItem = hasAdminSignal || hasAdminAccess || location.pathname.startsWith('/admin');
 

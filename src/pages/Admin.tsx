@@ -43,7 +43,7 @@ type LoanSummary = {
 export function Admin() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const { t, formatCurrency, language } = useLanguage();
-  const { user, session } = useAuth();
+  const { user, session, profile } = useAuth();
   const navigate = useNavigate();
   const [stats, setStats] = useState({
     totalUsers: 0,
@@ -67,31 +67,58 @@ export function Admin() {
 
   useEffect(() => {
     checkAdminStatus();
-  }, [user, session]);
+  }, [user, session, profile]);
 
   async function checkAdminStatus() {
-    if (!user) return;
+    if (!user || !session?.access_token) {
+      setIsAdmin(false);
+      setLoading(false);
+      return;
+    }
+
     try {
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('is_admin')
-        .eq('id', user.id)
-        .single();
-      
-      if (profile?.is_admin) {
+      const localAdminSignal = Boolean(
+        profile?.is_admin ||
+        (user as any)?.role === 'admin' ||
+        user?.app_metadata?.role === 'admin' ||
+        user?.user_metadata?.role === 'admin' ||
+        user?.app_metadata?.is_admin === true ||
+        user?.user_metadata?.is_admin === true
+      );
+
+      let allowed = localAdminSignal;
+
+      if (!allowed) {
+        const response = await fetch('/api/admin/access', {
+          headers: {
+            Authorization: `Bearer ${session.access_token}`,
+          },
+        });
+
+        const payload = await response.json().catch(() => ({}));
+        allowed = Boolean(payload?.allowed);
+      }
+
+      setIsAdmin(allowed);
+
+      if (allowed) {
         setIsAdmin(true);
-        fetchAdminData();
+        await fetchAdminData();
+      } else {
+        setAdminError('');
       }
     } catch (err) {
       console.error('Error checking admin status:', err);
+      setIsAdmin(false);
+      setAdminError('');
+    } finally {
+      setLoading(false);
     }
   }
 
   async function fetchAdminData() {
     try {
       if (!user || !session?.access_token) return;
-
-      setAdminError('');
 
       const response = await fetch('/api/admin/overview', {
         headers: {
@@ -102,9 +129,13 @@ export function Admin() {
       const payload = await response.json().catch(() => ({}));
 
       if (!response.ok) {
+        if (response.status === 403) {
+          setIsAdmin(false);
+        }
         throw new Error(payload?.error || 'Falha ao carregar os dados administrativos.');
       }
 
+      setAdminError('');
       setUsers((payload.users || []) as AdminProfile[]);
       setStats(payload.stats || {
         totalUsers: 0,
@@ -115,8 +146,6 @@ export function Admin() {
     } catch (err) {
       console.error('Error fetching admin data:', err);
       setAdminError(err instanceof Error ? err.message : 'Falha ao carregar painel administrativo.');
-    } finally {
-      setLoading(false);
     }
   }
 
